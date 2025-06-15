@@ -6,9 +6,10 @@
     "frontendDist": "../ui"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
-        "title": "LLM Dev Agent",
+        "title": "🚀 LLM Dev Agent - DESKTOP MODE",
         "width": 1200,
         "height": 800,
         "resizable": true,
@@ -16,11 +17,22 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self' tauri:; script-src 'self' tauri: 'nonce-{RANDOM}'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: tauri:; connect-src 'self' https://api.anthropic.com; object-src 'none'; base-uri 'self'; form-action 'self';"
+    },
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true
     }
   },
   "bundle": {
     "active": true,
-    "targets": "all"
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
   }
 }

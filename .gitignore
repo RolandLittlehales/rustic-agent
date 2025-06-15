@@ -45,6 +45,9 @@ coverage/
 **/*sk-ant-api03*
 **/claude_api*
 **/*CLAUDE_API_KEY*
+**/credentials*
+**/*token*
+**/*auth*
 
 # Environment files - NEVER COMMIT THESE
 .env
@@ -55,7 +58,28 @@ coverage/
 config.local.json
 **/api-keys.txt
 **/secrets.txt
+**/*.key
+**/*.crt
+**/*.cert
+**/*private*
 
 # Temporary files that might contain API keys
 **/*temp*api*
 **/*tmp*key*
+**/test-keys*
+**/*backup*key*
+
+# Security testing files
+**/security-test*
+**/pentest*
+**/vulnerability*
+
+# Database files that might contain sensitive data
+*.db
+*.sqlite
+*.sqlite3
+
+# Backup files
+*.bak
+*.backup
+*~

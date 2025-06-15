@@ -1,0 +1,371 @@
+/* Responsive Design Improvements for LLM Dev Agent */
+/* Enhanced responsive styles to add to styles.css */
+
+/* Container queries for better component responsiveness */
+@supports (container-type: inline-size) {
+    .app-main {
+        container-type: inline-size;
+    }
+    
+    @container (max-width: 768px) {
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: -280px;
+            height: 100vh;
+            z-index: 1000;
+            transition: left var(--transition-normal);
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .sidebar.open {
+            left: 0;
+        }
+        
+        .sidebar-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity var(--transition-normal);
+        }
+        
+        .sidebar-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+    }
+}
+
+/* Enhanced mobile breakpoints */
+@media (max-width: 1024px) {
+    .app-main {
+        grid-template-columns: 240px 1fr;
+    }
+    
+    .sidebar {
+        width: 240px;
+    }
+    
+    .message-content {
+        max-width: 85%;
+    }
+}
+
+@media (max-width: 768px) {
+    .app-main {
+        grid-template-columns: 1fr;
+        position: relative;
+    }
+    
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: -280px;
+        height: 100vh;
+        z-index: 1000;
+        transition: left var(--transition-normal);
+        box-shadow: var(--shadow-lg);
+        width: 280px;
+    }
+    
+    .sidebar.open {
+        left: 0;
+    }
+    
+    .sidebar-toggle {
+        display: block;
+        background: none;
+        border: none;
+        color: var(--gray-700);
+        font-size: 1.5rem;
+        cursor: pointer;
+        padding: var(--space-2);
+        border-radius: var(--radius-md);
+        transition: background-color var(--transition-fast);
+    }
+    
+    .sidebar-toggle:hover {
+        background-color: var(--gray-100);
+    }
+    
+    .chat-container {
+        width: 100%;
+    }
+    
+    .header-content {
+        padding: var(--space-3) var(--space-4);
+        gap: var(--space-3);
+    }
+    
+    .app-title {
+        font-size: 1.25rem;
+        flex: 1;
+    }
+    
+    .header-actions {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+    }
+}
+
+@media (max-width: 640px) {
+    .chat-messages {
+        padding: var(--space-3);
+        gap: var(--space-4);
+    }
+    
+    .message-content {
+        max-width: 95%;
+        padding: var(--space-3);
+        font-size: 13px;
+    }
+    
+    .chat-input-form {
+        padding: var(--space-3);
+    }
+    
+    .input-wrapper {
+        gap: var(--space-2);
+    }
+    
+    .send-btn {
+        min-width: 44px; /* Ensure touch target size */
+        padding: var(--space-3);
+    }
+    
+    .send-btn .btn-text {
+        display: none;
+    }
+    
+    .input-footer {
+        font-size: 11px;
+    }
+}
+
+@media (max-width: 480px) {
+    .app-header {
+        padding: var(--space-2) var(--space-3);
+    }
+    
+    .header-content {
+        padding: 0;
+    }
+    
+    .app-title {
+        font-size: 1.125rem;
+    }
+    
+    .input-wrapper {
+        flex-direction: column;
+        align-items: stretch;
+        gap: var(--space-2);
+    }
+    
+    .send-btn {
+        align-self: flex-end;
+        min-width: 80px;
+        justify-content: center;
+    }
+    
+    .send-btn .btn-text {
+        display: inline;
+    }
+    
+    .input-footer {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--space-1);
+    }
+    
+    .message-content pre {
+        font-size: 12px;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+}
+
+/* Landscape orientation on mobile */
+@media (max-height: 500px) and (orientation: landscape) {
+    .app-header {
+        padding: var(--space-2) var(--space-4);
+    }
+    
+    .sidebar-header {
+        padding: var(--space-2) var(--space-4);
+    }
+    
+    .chat-header {
+        padding: var(--space-2) var(--space-4);
+    }
+    
+    .chat-messages {
+        padding: var(--space-2) var(--space-4);
+    }
+    
+    .chat-input-form {
+        padding: var(--space-2) var(--space-4);
+    }
+}
+
+/* Tablet specific styles */
+@media (min-width: 768px) and (max-width: 1024px) {
+    .app-main {
+        grid-template-columns: 320px 1fr;
+    }
+    
+    .sidebar {
+        width: 320px;
+    }
+    
+    .message-content {
+        max-width: 80%;
+    }
+    
+    .chat-input-form {
+        padding: var(--space-4) var(--space-6);
+    }
+}
+
+/* Touch device optimizations */
+@media (hover: none) and (pointer: coarse) {
+    .btn, .file-item {
+        min-height: 44px; /* Ensure minimum touch target size */
+        padding: var(--space-3) var(--space-4);
+    }
+    
+    .btn-icon {
+        min-width: 44px;
+        min-height: 44px;
+        padding: var(--space-3);
+    }
+    
+    .file-item {
+        padding: var(--space-3);
+    }
+    
+    #chatInput {
+        min-height: 44px;
+        padding: var(--space-3) var(--space-4);
+        font-size: 16px; /* Prevent zoom on iOS */
+    }
+    
+    /* Larger tap targets for mobile */
+    .status-indicator {
+        width: 12px;
+        height: 12px;
+    }
+}
+
+/* Print styles */
+@media print {
+    .app-header,
+    .sidebar,
+    .chat-input-container,
+    .loading-overlay {
+        display: none !important;
+    }
+    
+    .app-main {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+    
+    .chat-container {
+        overflow: visible;
+    }
+    
+    .chat-messages {
+        overflow: visible;
+        height: auto;
+        padding: 0;
+    }
+    
+    .message {
+        break-inside: avoid;
+        margin-bottom: var(--space-4);
+    }
+    
+    .message-content {
+        border: 1px solid var(--gray-300);
+        max-width: 100%;
+    }
+    
+    .user-message .message-content {
+        background-color: var(--gray-100) !important;
+        color: var(--gray-900) !important;
+    }
+}
+
+/* Sidebar toggle button (hidden by default, shown on mobile) */
+.sidebar-toggle {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--gray-700);
+    cursor: pointer;
+    padding: var(--space-2);
+    border-radius: var(--radius-md);
+    transition: background-color var(--transition-fast);
+}
+
+.sidebar-toggle:hover {
+    background-color: var(--gray-100);
+}
+
+.sidebar-toggle svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* Sidebar overlay for mobile */
+.sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--transition-normal);
+}
+
+.sidebar-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Enhanced scrollbar for mobile */
+@media (max-width: 768px) {
+    ::-webkit-scrollbar {
+        width: 4px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: var(--gray-400);
+        border-radius: 2px;
+    }
+}
+
+/* Loading overlay responsive */
+.loading-overlay .loading-spinner {
+    padding: var(--space-6);
+    max-width: 90vw;
+}
+
+@media (max-width: 480px) {
+    .loading-overlay .loading-spinner {
+        padding: var(--space-4);
+    }
+    
+    .loading-overlay .loading-spinner p {
+        font-size: 14px;
+    }
+}
