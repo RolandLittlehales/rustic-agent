@@ -131,23 +131,35 @@ class DevAgentApp {
     }
     
     async simulateAPICall(message) {
+        console.log('🚀 simulateAPICall() called with message:', message.substring(0, 50) + '...');
+        
         // Check if Tauri API is available
         if (window.__TAURI__ && window.__TAURI__.core) {
+            console.log('✅ Tauri available - using desktop mode');
             try {
                 // First set API key if not already set
+                console.log('🔑 Setting API key...');
                 await this.setApiKey();
                 
                 // Send message to Claude through Tauri
+                console.log('📤 Sending message to Claude via Tauri...');
                 const response = await window.__TAURI__.core.invoke('send_message_to_claude', {
                     message: message
                 });
                 
+                console.log('✅ Received response from Tauri:', response.substring(0, 100) + '...');
                 return response;
             } catch (error) {
-                console.error('Tauri API call failed:', error);
-                return `❌ Tauri Error: ${error}`;
+                console.error('❌ Tauri API call failed:', error);
+                console.error('Error details:', {
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack
+                });
+                return `❌ Tauri Error: ${error.message || error}`;
             }
         } else {
+            console.log('⚠️ Tauri not available - using browser fallback');
             // Direct Claude API call as fallback (for testing when Tauri isn't available)
             return await this.directClaudeAPICall(message);
         }
@@ -196,26 +208,45 @@ class DevAgentApp {
 
     // Set the Claude API key (only when Tauri is available)
     async setApiKey() {
+        console.log('🔑 setApiKey() called');
+        console.log('- Tauri available:', !!(window.__TAURI__ && window.__TAURI__.core));
+        console.log('- apiKeySet flag:', this.apiKeySet);
+        
         // Skip if already set or if Tauri is not available
-        if (!window.__TAURI__ || !window.__TAURI__.core || this.apiKeySet) {
+        if (!window.__TAURI__ || !window.__TAURI__.core) {
+            console.log('⚠️ Skipping API key setup - Tauri not available');
+            return;
+        }
+        
+        if (this.apiKeySet) {
+            console.log('⚠️ Skipping API key setup - already set');
             return;
         }
 
         const apiKey = window.CLAUDE_API_KEY || "YOUR_API_KEY_HERE";
+        console.log('- API key source:', window.CLAUDE_API_KEY ? 'window.CLAUDE_API_KEY' : 'fallback');
+        // Security: Mask API key details in logs
+        console.log('- API key: [REDACTED - Length: ' + apiKey.length + ']');
+        console.log('- API key format valid:', apiKey.startsWith('sk-ant'));
         
-        if (apiKey === "YOUR_API_KEY_HERE") {
-            console.error('No Claude API key provided. Set CLAUDE_API_KEY environment variable.');
+        if (apiKey === "YOUR_API_KEY_HERE" || !apiKey) {
+            console.error('❌ No Claude API key provided. Set CLAUDE_API_KEY environment variable.');
+            this.addMessage('system', '❌ No Claude API key available. Check console for details.');
             return;
         }
         
         try {
-            await window.__TAURI__.core.invoke('set_claude_api_key', {
+            console.log('🚀 Calling Tauri set_claude_api_key command...');
+            const result = await window.__TAURI__.core.invoke('set_claude_api_key', {
                 apiKey: apiKey
             });
-            console.log('✅ Claude API key set successfully via Tauri');
+            console.log('✅ Tauri API key command result:', result);
             this.apiKeySet = true;
+            this.addMessage('system', '✅ Claude API key configured successfully');
         } catch (error) {
             console.error('❌ Failed to set API key via Tauri:', error);
+            this.addMessage('system', `❌ Failed to configure API key: ${error.message || error}`);
+            this.apiKeySet = false; // Allow retry
         }
     }
     
@@ -419,16 +450,40 @@ class DevAgentApp {
     
     // Check which environment we're running in
     checkEnvironment() {
+        console.log('🔍 Environment Check:');
+        console.log('- window.__TAURI__:', !!window.__TAURI__);
+        console.log('- window.__TAURI__.core:', !!(window.__TAURI__ && window.__TAURI__.core));
+        console.log('- window.CLAUDE_API_KEY defined:', !!window.CLAUDE_API_KEY);
+        // Security: API key details masked in production
+        if (window.CLAUDE_API_KEY && window.CLAUDE_API_KEY !== 'PLACEHOLDER_FOR_DEV_INJECTION') {
+            console.log('- API Key: [REDACTED - Length: ' + window.CLAUDE_API_KEY.length + ']');
+            console.log('- API Key format valid:', window.CLAUDE_API_KEY.startsWith('sk-ant'));
+        } else {
+            console.log('- API Key: [NOT SET OR PLACEHOLDER]');
+        }
+        
         if (window.__TAURI__ && window.__TAURI__.core) {
-            this.addMessage('assistant', '🚀 **Tauri Desktop Mode** - Full functionality enabled!\n\nI can help you with:\n• File operations (read/write/list)\n• Claude AI integration with tools\n• Development tasks\n\nTry: "List files in current directory"');
-            document.title = 'LLM Dev Agent - Desktop Mode ✅';
+            console.log('✅ Running in Tauri Desktop Mode');
+            // Security: Don't expose API key status in user messages
+            const apiStatus = (window.CLAUDE_API_KEY && window.CLAUDE_API_KEY !== 'PLACEHOLDER_FOR_DEV_INJECTION') ? 'Configured ✅' : 'Missing ❌';
+            this.addMessage('assistant', '🚀 **DESKTOP MODE ACTIVE** - Full functionality enabled!\n\n🔑 API Key Status: ' + apiStatus + '\n\n✅ You are in the CORRECT window!\n\nI can help you with:\n• File operations (read/write/list)\n• Claude AI integration with tools\n• Development tasks\n\nTry: "Hello Claude, can you list the files in the current directory?"');
+            document.title = '🚀 LLM Dev Agent - DESKTOP MODE ✅';
             // Add visual indicator
             const header = document.querySelector('.app-header');
             if (header) {
                 header.style.borderLeft = '4px solid #10B981';
+                header.style.backgroundColor = '#D1FAE5';
             }
+            // Add desktop mode badge
+            const badge = document.createElement('div');
+            badge.innerHTML = '🚀 DESKTOP MODE';
+            badge.style.cssText = 'position: fixed; top: 10px; right: 10px; background: #10B981; color: white; padding: 8px 16px; border-radius: 20px; font-weight: bold; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.2);';
+            document.body.appendChild(badge);
         } else {
-            this.addMessage('assistant', '🌐 **Browser Fallback Mode** - Limited functionality\n\nI can provide basic Claude AI responses, but file operations are not available.\n\n⚠️ For full functionality, close this and run: `npm run dev`\n\n🔍 Look for a **desktop application window**, not this browser tab!');
+            console.log('⚠️ Running in Browser Fallback Mode');
+            // Security: Don't expose API key status in user messages
+            const apiStatus = (window.CLAUDE_API_KEY && window.CLAUDE_API_KEY !== 'PLACEHOLDER_FOR_DEV_INJECTION') ? 'Configured ✅' : 'Missing ❌';
+            this.addMessage('assistant', '🌐 **Browser Fallback Mode** - Limited functionality\n\n🔑 API Key Status: ' + apiStatus + '\n\nI can provide basic Claude AI responses, but file operations are not available.\n\n⚠️ For full functionality, close this and run: `npm run dev`\n\n🔍 Look for a **desktop application window**, not this browser tab!');
             document.title = 'LLM Dev Agent - Browser Mode ⚠️';
             // Add visual indicator
             const header = document.querySelector('.app-header');
