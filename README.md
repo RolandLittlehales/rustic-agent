@@ -383,6 +383,7 @@ Built for educational and development purposes. Ensure you comply with Anthropic
 
 ---
 
-**Total Development Time**: ~2 hours from conception to working application
-**Lines of Code**: ~1,500 lines of well-structured Rust + frontend code
-**Architecture**: Production-ready foundation for LLM agent development
+**Total Development Time**: ~2 hours from conception to working application  
+**Lines of Code**: ~1,500 lines of well-structured Rust + frontend code  
+**Architecture**: Production-ready foundation for LLM agent development  
+**Repository**: [RolandLittlehales/rustic-agent](https://github.com/RolandLittlehales/rustic-agent)
