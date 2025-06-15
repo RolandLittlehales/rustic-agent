@@ -1,0 +1,388 @@
+/* Cross-platform Consistency Fixes for LLM Dev Agent */
+/* Platform-specific styles and compatibility fixes */
+
+/* Base font rendering improvements */
+body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+}
+
+/* macOS specific fixes */
+@supports (-webkit-backdrop-filter: blur(1px)) {
+    .app-header,
+    .sidebar-header,
+    .chat-header,
+    .chat-input-container {
+        -webkit-backdrop-filter: blur(10px);
+        backdrop-filter: blur(10px);
+        background: rgba(255, 255, 255, 0.8);
+    }
+    
+    .loading-overlay {
+        -webkit-backdrop-filter: blur(4px);
+        backdrop-filter: blur(4px);
+    }
+}
+
+/* Windows specific fixes */
+@media screen and (-ms-high-contrast: active) {
+    .btn {
+        border: 2px solid;
+    }
+    
+    .message-content {
+        border: 1px solid;
+    }
+    
+    .file-item:hover {
+        background: Highlight;
+        color: HighlightText;
+    }
+}
+
+/* Windows 10/11 focus styles */
+@media screen and (prefers-color-scheme: light) {
+    .btn:focus,
+    #chatInput:focus,
+    .file-item:focus {
+        outline: 2px solid #0078d4;
+        outline-offset: 2px;
+    }
+}
+
+@media screen and (prefers-color-scheme: dark) {
+    .btn:focus,
+    #chatInput:focus,
+    .file-item:focus {
+        outline: 2px solid #60cdff;
+        outline-offset: 2px;
+    }
+}
+
+/* Linux/GTK specific fixes */
+@supports (font-variation-settings: normal) {
+    body {
+        font-variation-settings: "wght" 400;
+    }
+    
+    .app-title {
+        font-variation-settings: "wght" 600;
+    }
+    
+    .btn {
+        font-variation-settings: "wght" 500;
+    }
+}
+
+/* Firefox specific fixes */
+@-moz-document url-prefix() {
+    .btn {
+        padding: calc(var(--space-2) + 1px) var(--space-4);
+    }
+    
+    #chatInput {
+        padding: calc(var(--space-3) + 1px) var(--space-4);
+    }
+    
+    .spinner {
+        animation: spin 1s linear infinite;
+    }
+    
+    /* Fix scrollbar styling for Firefox */
+    .chat-messages {
+        scrollbar-width: thin;
+        scrollbar-color: var(--gray-300) var(--gray-100);
+    }
+    
+    .file-tree {
+        scrollbar-width: thin;
+        scrollbar-color: var(--gray-300) var(--gray-100);
+    }
+}
+
+/* Safari specific fixes */
+@supports (-webkit-appearance: none) {
+    .btn {
+        -webkit-appearance: none;
+    }
+    
+    #chatInput {
+        -webkit-appearance: none;
+        border-radius: var(--radius-lg);
+    }
+    
+    /* Fix for Safari's aggressive form styling */
+    button,
+    input,
+    textarea {
+        -webkit-appearance: none;
+        background-clip: padding-box;
+    }
+    
+    /* Fix textarea resize handle in Safari */
+    #chatInput {
+        resize: vertical;
+    }
+}
+
+/* Chrome/Webkit specific fixes */
+@supports (-webkit-text-stroke: 1px transparent) {
+    .app-title {
+        -webkit-text-stroke: 0.5px transparent;
+    }
+}
+
+/* Edge specific fixes */
+@supports (-ms-ime-align: auto) {
+    .btn {
+        border-style: solid;
+    }
+    
+    .file-item {
+        border-style: solid;
+        border-color: transparent;
+    }
+}
+
+/* Mobile Safari specific fixes */
+@supports (-webkit-touch-callout: none) {
+    #chatInput {
+        font-size: 16px; /* Prevent zoom on focus */
+        -webkit-user-select: text;
+        user-select: text;
+    }
+    
+    .btn {
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+    }
+    
+    /* Fix for safe area insets */
+    .app-container {
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+    
+    .app-header {
+        padding-top: max(var(--space-4), env(safe-area-inset-top));
+    }
+}
+
+/* Android Chrome specific fixes */
+@media screen and (max-width: 768px) {
+    @supports (display: -webkit-box) {
+        #chatInput {
+            font-size: 16px; /* Prevent keyboard zoom */
+        }
+        
+        .btn {
+            min-height: 44px; /* Android touch target requirement */
+        }
+        
+        .file-item {
+            min-height: 44px; /* Android touch target requirement */
+        }
+    }
+}
+
+/* High DPI display fixes */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    .file-icon {
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+    }
+    
+    .spinner {
+        border-width: 0.5px;
+        transform: translateZ(0); /* Force hardware acceleration */
+    }
+}
+
+/* Reduced transparency for older systems */
+@media (prefers-reduced-transparency: reduce) {
+    .app-header,
+    .sidebar-header,
+    .chat-header,
+    .chat-input-container {
+        background: white;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
+    
+    .loading-overlay {
+        background: rgba(0, 0, 0, 0.8);
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
+    
+    .message-actions {
+        background: white;
+        backdrop-filter: none;
+    }
+}
+
+/* Print media fixes for all platforms */
+@media print {
+    * {
+        -webkit-print-color-adjust: exact !important;
+        color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+    
+    .app-container {
+        height: auto !important;
+        overflow: visible !important;
+    }
+    
+    .chat-messages {
+        overflow: visible !important;
+        height: auto !important;
+    }
+}
+
+/* Input method editor (IME) support */
+#chatInput {
+    ime-mode: active;
+    -webkit-ime-mode: active;
+}
+
+#chatInput:focus {
+    ime-mode: active;
+    -webkit-ime-mode: active;
+}
+
+/* Touch device optimizations */
+@media (pointer: coarse) {
+    .btn,
+    .file-item,
+    .message-action-btn {
+        min-height: 44px;
+        min-width: 44px;
+        touch-action: manipulation;
+    }
+    
+    .chat-messages {
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+    }
+    
+    .file-tree {
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+    }
+}
+
+/* Hover capability detection */
+@media (hover: none) {
+    .btn:hover,
+    .file-item:hover {
+        /* Remove hover effects on touch devices */
+        transform: none;
+        background-color: var(--gray-100);
+    }
+    
+    .message-content:hover {
+        transform: none;
+        box-shadow: var(--shadow-md);
+    }
+}
+
+/* Focus-visible support for better keyboard navigation */
+@supports selector(:focus-visible) {
+    .btn:focus:not(:focus-visible) {
+        outline: none;
+        box-shadow: none;
+    }
+    
+    #chatInput:focus:not(:focus-visible) {
+        outline: none;
+        box-shadow: 0 0 0 3px var(--primary-50);
+    }
+}
+
+/* Container query support fallback */
+@supports not (container-type: inline-size) {
+    @media (max-width: 768px) {
+        .sidebar {
+            position: fixed;
+            left: -280px;
+            top: 0;
+            height: 100vh;
+            z-index: 1000;
+            transition: left var(--transition-normal);
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .sidebar.open {
+            left: 0;
+        }
+    }
+}
+
+/* Prefers contrast support */
+@media (prefers-contrast: high) {
+    .btn {
+        border-width: 2px;
+        font-weight: 600;
+    }
+    
+    .message-content {
+        border: 2px solid;
+    }
+    
+    .file-item.selected {
+        border: 2px solid var(--primary-700);
+        background: var(--primary-100);
+    }
+    
+    .status-indicator.connected {
+        border: 2px solid var(--success-700);
+    }
+}
+
+/* Color gamut support */
+@media (color-gamut: p3) {
+    :root {
+        --primary-500: color(display-p3 0.234 0.510 0.965);
+        --success-500: color(display-p3 0.063 0.725 0.506);
+        --warning-500: color(display-p3 0.961 0.620 0.043);
+        --error-500: color(display-p3 0.937 0.267 0.267);
+    }
+}
+
+/* Animation performance optimizations */
+.spinner,
+.message.new,
+.loading-overlay,
+.tooltip {
+    will-change: transform;
+    transform: translateZ(0);
+}
+
+/* Prevent layout shifts */
+.file-tree-placeholder,
+.loading-spinner {
+    min-height: 100px;
+}
+
+.message-timestamp {
+    min-width: 60px;
+}
+
+/* CPU performance optimization */
+@media (prefers-reduced-motion: no-preference) {
+    .spinner {
+        animation: spin 1s linear infinite;
+        transform: translateZ(0);
+    }
+}
+
+/* Memory usage optimization */
+.chat-messages img,
+.message-content img {
+    max-width: 100%;
+    height: auto;
+    loading: lazy;
+}

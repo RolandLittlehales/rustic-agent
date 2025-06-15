@@ -8,7 +8,7 @@ tauri-build = { version = "2.0", features = ["codegen"] }
 
 [dependencies]
 # Tauri framework
-tauri = { version = "2.0", features = ["devtools"] }
+tauri = { version = "2.0", features = [ "tray-icon", "devtools"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

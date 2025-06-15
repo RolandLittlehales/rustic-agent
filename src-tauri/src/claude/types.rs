@@ -66,12 +66,15 @@ pub struct ToolInputSchema {
     pub r#type: String,
     pub properties: HashMap<String, PropertySchema>,
     pub required: Vec<String>,
+    #[serde(rename = "additionalProperties")]
+    pub additional_properties: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PropertySchema {
     pub r#type: String,
     pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub items: Option<Box<PropertySchema>>,
 }
 

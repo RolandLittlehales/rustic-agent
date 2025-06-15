@@ -286,15 +286,25 @@ class DevAgentApp {
     }
     
     formatMessageContent(content) {
-        // Basic markdown-like formatting
-        let formatted = content
-            .replace(/`([^`]+)`/g, '<code>$1</code>')
-            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+        // First, escape HTML to prevent XSS
+        const escapeHtml = (text) => {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        };
+        
+        // Escape the content first
+        let escaped = escapeHtml(content);
+        
+        // Then apply safe markdown-like formatting
+        let formatted = escaped
+            .replace(/`([^`<>]+)`/g, '<code>$1</code>')
+            .replace(/\*\*([^*<>]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*([^*<>]+)\*/g, '<em>$1</em>')
             .replace(/\n/g, '<br>');
         
-        // Handle code blocks
-        formatted = formatted.replace(/```([^`]+)```/g, '<pre><code>$1</code></pre>');
+        // Handle code blocks with additional sanitization
+        formatted = formatted.replace(/```([^`<>]+)```/g, '<pre><code>$1</code></pre>');
         
         return formatted;
     }
@@ -474,10 +484,10 @@ class DevAgentApp {
                 header.style.borderLeft = '4px solid #10B981';
                 header.style.backgroundColor = '#D1FAE5';
             }
-            // Add desktop mode badge
+            // Add desktop mode badge (positioned to avoid settings button)
             const badge = document.createElement('div');
             badge.innerHTML = '🚀 DESKTOP MODE';
-            badge.style.cssText = 'position: fixed; top: 10px; right: 10px; background: #10B981; color: white; padding: 8px 16px; border-radius: 20px; font-weight: bold; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.2);';
+            badge.style.cssText = 'position: fixed; top: 10px; left: 10px; background: #10B981; color: white; padding: 6px 12px; border-radius: 16px; font-weight: bold; font-size: 12px; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.1); opacity: 0.9;';
             document.body.appendChild(badge);
         } else {
             console.log('⚠️ Running in Browser Fallback Mode');

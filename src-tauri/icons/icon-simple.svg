@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background with solid colors for better webview compatibility -->
+  <rect x="32" y="32" width="448" height="448" rx="80" ry="80" fill="#ff6b35"/>
+  
+  <!-- Terminal/Bracket frame representing development -->
+  <rect x="80" y="120" width="352" height="272" rx="12" ry="12" fill="none" stroke="#1e3a5f" stroke-width="8"/>
+  
+  <!-- Code brackets < > -->
+  <path d="M 140 180 L 110 220 L 110 240 L 140 280" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 372 180 L 402 220 L 402 240 L 372 280" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Central AI/Agent symbol - stylized robot head -->
+  <circle cx="256" cy="230" r="45" fill="#1e3a5f" stroke="#ffffff" stroke-width="4"/>
+  
+  <!-- Robot eyes -->
+  <circle cx="240" cy="220" r="8" fill="#ff6b35"/>
+  <circle cx="272" cy="220" r="8" fill="#ff6b35"/>
+  
+  <!-- Neural network connections -->
+  <g stroke="#ffffff" stroke-width="3" fill="none">
+    <!-- Horizontal connections -->
+    <line x1="200" y1="230" x2="220" y2="230"/>
+    <line x1="292" y1="230" x2="312" y2="230"/>
+    <!-- Diagonal connections -->
+    <line x1="210" y1="210" x2="230" y2="220"/>
+    <line x1="210" y1="250" x2="230" y2="240"/>
+    <line x1="302" y1="210" x2="282" y2="220"/>
+    <line x1="302" y1="250" x2="282" y2="240"/>
+  </g>
+  
+  <!-- Connection nodes -->
+  <circle cx="200" cy="230" r="4" fill="#ffffff"/>
+  <circle cx="312" cy="230" r="4" fill="#ffffff"/>
+  <circle cx="210" cy="210" r="3" fill="#ffffff"/>
+  <circle cx="210" cy="250" r="3" fill="#ffffff"/>
+  <circle cx="302" cy="210" r="3" fill="#ffffff"/>
+  <circle cx="302" cy="250" r="3" fill="#ffffff"/>
+  
+  <!-- Command line cursor -->
+  <rect x="170" y="320" width="20" height="4" rx="2" fill="#ffffff"/>
+  <rect x="200" y="320" width="60" height="4" rx="2" fill="#ffffff"/>
+  <rect x="270" y="320" width="40" height="4" rx="2" fill="#ffffff"/>
+  
+  <!-- Cursor -->
+  <rect x="320" y="318" width="3" height="8" fill="#ffffff"/>
+</svg>

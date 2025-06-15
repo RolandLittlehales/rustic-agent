@@ -81,13 +81,19 @@ tauriProcess.on('close', (code) => {
 function cleanupApiKey() {
     try {
         const htmlContent = fs.readFileSync(htmlPath, 'utf8');
-        // Replace any actual API key back with the placeholder
+        // Replace any actual API key back with the placeholder (improved regex)
         const cleanedContent = htmlContent.replace(
-            /window\.CLAUDE_API_KEY = "sk-ant-api03-[^"]*"/,
+            /window\.CLAUDE_API_KEY = "[^"]*"/g,
             'window.CLAUDE_API_KEY = "PLACEHOLDER_FOR_DEV_INJECTION"'
         );
         fs.writeFileSync(htmlPath, cleanedContent);
         console.log('🧹 Cleaned up API key from frontend');
+        
+        // Verify cleanup was successful
+        const verifyContent = fs.readFileSync(htmlPath, 'utf8');
+        if (verifyContent.includes('sk-ant-')) {
+            console.error('⚠️ WARNING: API key may still be present in HTML file!');
+        }
     } catch (error) {
         console.warn('⚠️ Could not clean up API key:', error.message);
     }

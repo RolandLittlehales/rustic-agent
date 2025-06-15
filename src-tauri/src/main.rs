@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 mod claude;
+mod security;
 
 use claude::{ClaudeClient, ClaudeConfig, Conversation};
 
@@ -28,18 +29,36 @@ impl Default for AppState {
 
 #[tauri::command]
 async fn greet(name: &str) -> Result<String, String> {
-    Ok(format!("Hello, {}! You've been greeted from Rust!", name))
+    // Input validation
+    if name.is_empty() || name.len() > 100 {
+        return Err("Invalid name parameter".to_string());
+    }
+    
+    // Sanitize name to prevent any potential issues
+    let sanitized_name = name.chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace() || *c == '-' || *c == '_')
+        .take(50)
+        .collect::<String>();
+    
+    Ok(format!("Hello, {}! You've been greeted from Rust!", sanitized_name))
 }
 
 #[tauri::command]
 async fn set_claude_api_key(
-    api_key: String,
+    apiKey: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<String, String> {
+    // Log without exposing key details
+    if apiKey.is_empty() {
+        println!("🔑 Rust: set_claude_api_key called with empty key");
+    } else {
+        println!("🔑 Rust: set_claude_api_key called with key (length: {})", apiKey.len());
+    }
+    
     // Update the config with the API key
     {
         let mut config = state.config.lock().await;
-        config.api_key = api_key;
+        config.api_key = apiKey;
     }
     
     // Create a new Claude client with the updated config
@@ -59,6 +78,24 @@ async fn send_message_to_claude(
     message: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<String, String> {
+    // Input validation
+    if message.is_empty() {
+        return Err("Message cannot be empty".to_string());
+    }
+    
+    if message.len() > 50000 { // 50KB limit
+        return Err("Message too long (max 50KB)".to_string());
+    }
+    
+    // Basic content filtering
+    let suspicious_patterns = ["<script", "javascript:", "data:", "vbscript:", "onload=", "onerror="];
+    let message_lower = message.to_lowercase();
+    for pattern in &suspicious_patterns {
+        if message_lower.contains(pattern) {
+            return Err("Message contains potentially unsafe content".to_string());
+        }
+    }
+    
     // Check if we have a valid configuration
     let config = {
         let config_guard = state.config.lock().await;
