@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Dev Agent</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <h1 class="app-title">LLM Dev Agent</h1>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" id="settingsBtn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="m12 1 1.5 2.5L16 3l1 1.5L19.5 3 21 5.5 18.5 7 20 9.5 17.5 10 19 12.5 16.5 14 18 16.5 15.5 17 17 19.5 14.5 21 12 18.5 9.5 21 7 19.5 5.5 17 3 16.5 1.5 14 4 12.5 2.5 10 5 9.5 3.5 7 6 5.5 4.5 3 7 1.5 9.5 1z"></path>
+                        </svg>
+                        Settings
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="app-main">
+            <!-- Sidebar with File Explorer -->
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h2>File Explorer</h2>
+                    <button class="btn btn-icon" id="refreshBtn" title="Refresh">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <polyline points="1 20 1 14 7 14"></polyline>
+                            <path d="m3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="file-tree" id="fileTree">
+                    <div class="file-tree-placeholder">
+                        <p>Loading project files...</p>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Chat Interface -->
+            <section class="chat-container">
+                <div class="chat-header">
+                    <h2>Chat</h2>
+                    <div class="chat-status">
+                        <span class="status-indicator connected"></span>
+                        <span class="status-text">Connected</span>
+                    </div>
+                </div>
+
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message system-message">
+                        <div class="message-content">
+                            <p>Welcome to LLM Dev Agent! I'm here to help you with your development tasks.</p>
+                        </div>
+                        <div class="message-timestamp">Just now</div>
+                    </div>
+                </div>
+
+                <div class="chat-input-container">
+                    <form class="chat-input-form" id="chatForm">
+                        <div class="input-wrapper">
+                            <textarea 
+                                id="chatInput" 
+                                placeholder="Ask me anything about your code..." 
+                                rows="1"
+                                maxlength="8000"
+                            ></textarea>
+                            <button type="submit" class="btn btn-primary send-btn" id="sendBtn">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                                    <polygon points="22,2 15,22 11,13 2,9"></polygon>
+                                </svg>
+                                Send
+                            </button>
+                        </div>
+                        <div class="input-footer">
+                            <span class="char-count">0/8000</span>
+                            <span class="input-hint">Press Ctrl+Enter to send</span>
+                        </div>
+                    </form>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay hidden" id="loadingOverlay">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Processing...</p>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

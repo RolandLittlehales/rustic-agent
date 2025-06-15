@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+target/
+
+# Environment files
+.env
+.env.local
+
+# Tauri build outputs
+src-tauri/target/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# API keys and secrets
+**/*api*key*
+**/*secret*
+*.pem
+
+# Local configuration
+config.local.json

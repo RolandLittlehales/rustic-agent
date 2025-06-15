@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Dev Agent - Demo</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        .demo-header {
+            background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
+            color: white;
+            padding: var(--space-8) var(--space-6);
+            text-align: center;
+        }
+        
+        .demo-header h1 {
+            font-size: 2.5rem;
+            font-weight: 600;
+            margin-bottom: var(--space-4);
+        }
+        
+        .demo-header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .demo-controls {
+            background: white;
+            border-bottom: 1px solid var(--gray-200);
+            padding: var(--space-4) var(--space-6);
+            display: flex;
+            gap: var(--space-3);
+            flex-wrap: wrap;
+        }
+        
+        .demo-main {
+            height: calc(100vh - 200px);
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            overflow: hidden;
+        }
+        
+        @media (max-width: 768px) {
+            .demo-header h1 {
+                font-size: 2rem;
+            }
+            
+            .demo-main {
+                grid-template-columns: 1fr;
+                height: calc(100vh - 160px);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Demo Header -->
+        <div class="demo-header">
+            <h1>LLM Dev Agent</h1>
+            <p>Interactive AI assistant for developers with modern chat interface and file explorer</p>
+        </div>
+        
+        <!-- Demo Controls -->
+        <div class="demo-controls">
+            <button class="btn btn-secondary" onclick="demoSendMessage()">Send Demo Message</button>
+            <button class="btn btn-secondary" onclick="demoClearChat()">Clear Chat</button>
+            <button class="btn btn-secondary" onclick="demoAddCodeExample()">Add Code Example</button>
+            <button class="btn btn-secondary" onclick="demoToggleProcessing()">Toggle Processing</button>
+        </div>
+
+        <!-- Main Content -->
+        <main class="demo-main">
+            <!-- Sidebar with File Explorer -->
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h2>File Explorer</h2>
+                    <button class="btn btn-icon" id="refreshBtn" title="Refresh">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <polyline points="1 20 1 14 7 14"></polyline>
+                            <path d="m3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="file-tree" id="fileTree">
+                    <div class="file-tree-placeholder">
+                        <p>Loading project files...</p>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Chat Interface -->
+            <section class="chat-container">
+                <div class="chat-header">
+                    <h2>Chat</h2>
+                    <div class="chat-status">
+                        <span class="status-indicator connected"></span>
+                        <span class="status-text">Connected</span>
+                    </div>
+                </div>
+
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message system-message">
+                        <div class="message-content">
+                            <p>Welcome to the LLM Dev Agent demo! Try the demo controls above or start typing below.</p>
+                        </div>
+                        <div class="message-timestamp">Just now</div>
+                    </div>
+                </div>
+
+                <div class="chat-input-container">
+                    <form class="chat-input-form" id="chatForm">
+                        <div class="input-wrapper">
+                            <textarea 
+                                id="chatInput" 
+                                placeholder="Try asking: 'How do I optimize this React component?' or 'Explain this error message'" 
+                                rows="1"
+                                maxlength="8000"
+                            ></textarea>
+                            <button type="submit" class="btn btn-primary send-btn" id="sendBtn">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                                    <polygon points="22,2 15,22 11,13 2,9"></polygon>
+                                </svg>
+                                Send
+                            </button>
+                        </div>
+                        <div class="input-footer">
+                            <span class="char-count">0/8000</span>
+                            <span class="input-hint">Press Ctrl+Enter to send • Try the demo buttons above</span>
+                        </div>
+                    </form>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay hidden" id="loadingOverlay">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Processing...</p>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script src="js/app.js"></script>
+    <script>
+        // Demo functions
+        function demoSendMessage() {
+            const messages = [
+                "How can I optimize this JavaScript function for better performance?",
+                "What's the best way to handle errors in async/await functions?",
+                "Can you help me debug this CSS layout issue?",
+                "How do I set up a proper Git workflow for my team?",
+                "What are the security best practices for this API endpoint?"
+            ];
+            
+            const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+            window.devAgent.sendMessage(randomMessage);
+        }
+        
+        function demoClearChat() {
+            window.devAgent.clearChat();
+        }
+        
+        function demoAddCodeExample() {
+            const codeExamples = [
+                "Here's a React component example:\n\n```jsx\nfunction UserProfile({ userId }) {\n  const [user, setUser] = useState(null);\n  \n  useEffect(() => {\n    fetchUser(userId).then(setUser);\n  }, [userId]);\n  \n  return user ? <div>{user.name}</div> : <div>Loading...</div>;\n}\n```",
+                "Here's a Python function with type hints:\n\n```python\ndef calculate_fibonacci(n: int) -> int:\n    if n <= 1:\n        return n\n    return calculate_fibonacci(n-1) + calculate_fibonacci(n-2)\n```",
+                "Here's a Rust struct example:\n\n```rust\n#[derive(Debug, Clone)]\nstruct Config {\n    api_url: String,\n    timeout: Duration,\n    retries: u32,\n}\n\nimpl Config {\n    fn new() -> Self {\n        Self {\n            api_url: \"https://api.example.com\".to_string(),\n            timeout: Duration::from_secs(30),\n            retries: 3,\n        }\n    }\n}\n```"
+            ];
+            
+            const randomExample = codeExamples[Math.floor(Math.random() * codeExamples.length)];
+            window.devAgent.addMessage('assistant', randomExample);
+        }
+        
+        let processingDemo = false;
+        function demoToggleProcessing() {
+            processingDemo = !processingDemo;
+            window.devAgent.setProcessingState(processingDemo);
+        }
+        
+        // Enhanced demo with more realistic responses
+        document.addEventListener('DOMContentLoaded', () => {
+            // Override the simulateAPICall for better demo responses
+            const originalSimulateAPICall = window.devAgent.simulateAPICall;
+            window.devAgent.simulateAPICall = async function(message) {
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                
+                const lowerMessage = message.toLowerCase();
+                
+                if (lowerMessage.includes('react') || lowerMessage.includes('component')) {
+                    return "For React optimization, consider:\n\n• Use `React.memo()` for expensive components\n• Implement `useMemo()` and `useCallback()` for heavy computations\n• Split large components into smaller ones\n• Use React DevTools Profiler to identify bottlenecks\n\n```jsx\nconst OptimizedComponent = React.memo(({ data }) => {\n  const expensiveValue = useMemo(() => \n    heavyComputation(data), [data]\n  );\n  \n  return <div>{expensiveValue}</div>;\n});\n```";
+                }
+                
+                if (lowerMessage.includes('error') || lowerMessage.includes('debug')) {
+                    return "For debugging, try these steps:\n\n1. **Check the console** for error messages\n2. **Use debugger statements** or breakpoints\n3. **Validate inputs** and data types\n4. **Review recent changes** in version control\n5. **Test in isolation** to narrow down the issue\n\nCommon debugging tools:\n• Browser DevTools\n• `console.log()` for quick checks\n• Linting tools (ESLint, Clippy)\n• Unit tests to verify behavior";
+                }
+                
+                if (lowerMessage.includes('css') || lowerMessage.includes('layout')) {
+                    return "CSS layout debugging tips:\n\n• Use **CSS Grid** or **Flexbox** for modern layouts\n• Check for `box-sizing: border-box`\n• Inspect elements with browser DevTools\n• Use `outline: 1px solid red` to visualize containers\n\n```css\n.container {\n  display: grid;\n  grid-template-columns: 1fr 2fr;\n  gap: 1rem;\n  /* Debug: outline: 1px solid red; */\n}\n```";
+                }
+                
+                if (lowerMessage.includes('git') || lowerMessage.includes('workflow')) {
+                    return "Recommended Git workflow:\n\n1. **Feature branches**: Create branches for each feature\n2. **Pull requests**: Code review before merging\n3. **Conventional commits**: Clear commit messages\n4. **Protect main**: Require reviews for main branch\n\nBasic commands:\n```bash\ngit checkout -b feature/new-feature\ngit add .\ngit commit -m \"feat: add new feature\"\ngit push origin feature/new-feature\n```";
+                }
+                
+                return originalSimulateAPICall.call(this, message);
+            };
+        });
+    </script>
+</body>
+</html>

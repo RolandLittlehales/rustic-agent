@@ -1,0 +1,21 @@
+{
+  "name": "rustic-agent",
+  "version": "0.1.0",
+  "description": "Rustic Agent - LLM Development Agent built with Rust + Tauri",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "build": "tauri build",
+    "tauri": "tauri"
+  },
+  "keywords": [
+    "tauri",
+    "rust",
+    "llm",
+    "development",
+    "agent"
+  ],
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

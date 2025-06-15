@@ -1,0 +1,33 @@
+[package]
+name = "rustic-agent"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = ["codegen"] }
+
+[dependencies]
+# Tauri framework
+tauri = { version = "2.0", features = ["devtools"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Async runtime
+tokio = { version = "1.0", features = ["full"] }
+futures = "0.3"
+
+# HTTP client for Claude API
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Environment variables (for API keys)
+dotenvy = "0.15"
+
+# Additional utilities for API integration
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
