@@ -38,13 +38,24 @@ pids
 # Coverage directory used by tools like istanbul
 coverage/
 
-# API keys and secrets
+# API keys and secrets - CRITICAL SECURITY
 **/*api*key*
 **/*secret*
 *.pem
+**/*sk-ant-api03*
+**/claude_api*
+**/*CLAUDE_API_KEY*
+
+# Environment files - NEVER COMMIT THESE
+.env
+.env.*
+!.env.example
 
 # Local configuration
 config.local.json
+**/api-keys.txt
+**/secrets.txt
 
-# env
-.env
+# Temporary files that might contain API keys
+**/*temp*api*
+**/*tmp*key*
