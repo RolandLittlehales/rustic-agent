@@ -472,7 +472,7 @@ class DevAgentApp {
         console.log('- window.CLAUDE_API_KEY defined:', !!window.CLAUDE_API_KEY);
         // Security: API key details masked in production
         if (window.CLAUDE_API_KEY && window.CLAUDE_API_KEY !== 'PLACEHOLDER_FOR_DEV_INJECTION') {
-            console.log('- API Key: [REDACTED - Length: ' + window.CLAUDE_API_KEY.length + ']', window.CLAUDE_API_KEY);
+            console.log('- API Key: [REDACTED - Length: ' + window.CLAUDE_API_KEY.length + ']');
             console.log('- API Key format valid:', window.CLAUDE_API_KEY.startsWith('sk-ant'));
         } else {
             console.log('- API Key: [NOT SET OR PLACEHOLDER]');
