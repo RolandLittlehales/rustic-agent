@@ -18,9 +18,9 @@ pub struct ClaudeClient {
 
 impl ClaudeClient {
     pub fn new(config: ClaudeConfig) -> Result<Self> {
-        // Validate API key format
-        if !config.api_key.starts_with("sk-ant-") {
-            return Err(anyhow::anyhow!("Invalid Claude API key format"));
+        // Basic API key validation (just check it's not empty)
+        if config.api_key.is_empty() {
+            return Err(anyhow::anyhow!("API key cannot be empty"));
         }
         
         let http_client = Client::builder()
