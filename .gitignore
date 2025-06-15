@@ -45,3 +45,6 @@ coverage/
 
 # Local configuration
 config.local.json
+
+# env
+.env
