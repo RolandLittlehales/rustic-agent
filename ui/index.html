@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,6 +12,7 @@
     <!-- API key injection placeholder - replaced during dev by scripts/dev.js -->
     <script>window.CLAUDE_API_KEY = "PLACEHOLDER_FOR_DEV_INJECTION";</script>
 </head>
+
 <body>
     <div class="app-container">
         <!-- Header -->
@@ -65,12 +67,7 @@
                 <div class="chat-input-container">
                     <form class="chat-input-form" id="chatForm">
                         <div class="input-wrapper">
-                            <textarea 
-                                id="chatInput" 
-                                placeholder="Ask me anything about your code..." 
-                                rows="1"
-                                maxlength="8000"
-                            ></textarea>
+                            <textarea id="chatInput" placeholder="Ask me anything about your code..." rows="1" maxlength="8000"></textarea>
                             <button type="submit" class="btn btn-primary send-btn" id="sendBtn">
                                 <span class="icon icon-send"></span>
                                 Send
@@ -97,4 +94,5 @@
     <script src="js/config.js"></script>
     <script src="js/app.js"></script>
 </body>
+
 </html>
