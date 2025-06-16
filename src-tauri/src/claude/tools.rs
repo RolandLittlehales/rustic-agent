@@ -1,8 +1,8 @@
-use crate::claude::types::{Tool, ToolInputSchema, PropertySchema};
+use crate::claude::types::{PropertySchema, Tool, ToolInputSchema};
+use anyhow::Result;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use anyhow::Result;
 
 pub trait AgentTool: Send + Sync + std::fmt::Debug {
     fn name(&self) -> &str;
@@ -60,45 +60,64 @@ impl Default for ToolRegistry {
 // Security utilities for path validation
 fn validate_and_sanitize_path(path: &str) -> Result<PathBuf> {
     let path = Path::new(path);
-    
+
     // Get current working directory as the allowed base
     let current_dir = std::env::current_dir()
         .map_err(|e| anyhow::anyhow!("Cannot determine current directory: {}", e))?;
-    
+
     // Resolve the path (handles . and .. components)
     let canonical_path = if path.is_absolute() {
         path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
     } else {
-        current_dir.join(path).canonicalize().unwrap_or_else(|_| current_dir.join(path))
+        current_dir
+            .join(path)
+            .canonicalize()
+            .unwrap_or_else(|_| current_dir.join(path))
     };
-    
+
     // Ensure the path is within the current directory or its subdirectories
     if !canonical_path.starts_with(&current_dir) {
         return Err(anyhow::anyhow!(
-            "Access denied: Path '{}' is outside allowed directory", 
+            "Access denied: Path '{}' is outside allowed directory",
             path.display()
         ));
     }
-    
+
     // Additional security checks
     let path_str = canonical_path.to_string_lossy();
-    
+
     // Block access to sensitive directories
     let forbidden_patterns = [
-        "/etc/", "/root/", "/home/", "/var/", "/usr/", "/sys/", "/proc/",
-        "\\Windows\\", "\\System32\\", "\\Users\\", "\\Program Files\\",
-        ".ssh", ".aws", ".config", ".env", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"
+        "/etc/",
+        "/root/",
+        "/home/",
+        "/var/",
+        "/usr/",
+        "/sys/",
+        "/proc/",
+        "\\Windows\\",
+        "\\System32\\",
+        "\\Users\\",
+        "\\Program Files\\",
+        ".ssh",
+        ".aws",
+        ".config",
+        ".env",
+        "id_rsa",
+        "id_dsa",
+        "id_ecdsa",
+        "id_ed25519",
     ];
-    
+
     for pattern in &forbidden_patterns {
         if path_str.contains(pattern) {
             return Err(anyhow::anyhow!(
-                "Access denied: Path contains forbidden pattern '{}'", 
+                "Access denied: Path contains forbidden pattern '{}'",
                 pattern
             ));
         }
     }
-    
+
     Ok(canonical_path)
 }
 
@@ -147,8 +166,8 @@ impl AgentTool for ReadFileTool {
             const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10MB limit
             if metadata.len() > MAX_FILE_SIZE {
                 return Err(anyhow::anyhow!(
-                    "File too large: {} bytes (limit: {} bytes)", 
-                    metadata.len(), 
+                    "File too large: {} bytes (limit: {} bytes)",
+                    metadata.len(),
                     MAX_FILE_SIZE
                 ));
             }
@@ -156,7 +175,11 @@ impl AgentTool for ReadFileTool {
 
         match std::fs::read_to_string(&safe_path) {
             Ok(content) => Ok(content),
-            Err(e) => Err(anyhow::anyhow!("Failed to read file '{}': {}", safe_path.display(), e)),
+            Err(e) => Err(anyhow::anyhow!(
+                "Failed to read file '{}': {}",
+                safe_path.display(),
+                e
+            )),
         }
     }
 }
@@ -218,32 +241,43 @@ impl AgentTool for WriteFileTool {
         const MAX_CONTENT_SIZE: usize = 50 * 1024 * 1024; // 50MB limit
         if content.len() > MAX_CONTENT_SIZE {
             return Err(anyhow::anyhow!(
-                "Content too large: {} bytes (limit: {} bytes)", 
-                content.len(), 
+                "Content too large: {} bytes (limit: {} bytes)",
+                content.len(),
                 MAX_CONTENT_SIZE
             ));
         }
 
         // Check if we're trying to overwrite important files
-        let file_name = safe_path.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
-        
+        let file_name = safe_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
         let protected_files = [
-            "Cargo.toml", "package.json", ".env", ".gitignore", 
-            "tauri.conf.json", "main.rs", "lib.rs"
+            "Cargo.toml",
+            "package.json",
+            ".env",
+            ".gitignore",
+            "tauri.conf.json",
+            "main.rs",
+            "lib.rs",
         ];
-        
+
         if protected_files.contains(&file_name) {
             return Err(anyhow::anyhow!(
-                "Access denied: Cannot overwrite protected file '{}'", 
+                "Access denied: Cannot overwrite protected file '{}'",
                 file_name
             ));
         }
 
         match std::fs::write(&safe_path, content) {
-            Ok(_) => Ok(format!("Successfully wrote {} bytes to '{}'", content.len(), safe_path.display())),
-            Err(e) => Err(anyhow::anyhow!("Failed to write file '{}': {}", safe_path.display(), e)),
+            Ok(_) => Ok(format!(
+                "Successfully wrote {} bytes to '{}'",
+                content.len(),
+                safe_path.display()
+            )),
+            Err(e) => Err(anyhow::anyhow!(
+                "Failed to write file '{}': {}",
+                safe_path.display(),
+                e
+            )),
         }
     }
 }
@@ -293,27 +327,31 @@ impl AgentTool for ListDirectoryTool {
                 let mut result = Vec::new();
                 let mut count = 0;
                 const MAX_ENTRIES: usize = 1000; // Limit directory listing
-                
+
                 for entry in entries {
                     if count >= MAX_ENTRIES {
-                        result.push(format!("... (truncated, showing first {} entries)", MAX_ENTRIES));
+                        result.push(format!(
+                            "... (truncated, showing first {} entries)",
+                            MAX_ENTRIES
+                        ));
                         break;
                     }
-                    
+
                     match entry {
                         Ok(entry) => {
                             let name = entry.file_name().to_string_lossy().to_string();
-                            
+
                             // Skip hidden files and sensitive directories
                             if name.starts_with('.') && !name.eq(".") && !name.eq("..") {
                                 continue;
                             }
-                            
-                            let file_type = if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-                                "directory"
-                            } else {
-                                "file"
-                            };
+
+                            let file_type =
+                                if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                                    "directory"
+                                } else {
+                                    "file"
+                                };
                             result.push(format!("{} ({})", name, file_type));
                             count += 1;
                         }
@@ -322,7 +360,11 @@ impl AgentTool for ListDirectoryTool {
                 }
                 Ok(result.join("\n"))
             }
-            Err(e) => Err(anyhow::anyhow!("Failed to read directory '{}': {}", safe_path.display(), e)),
+            Err(e) => Err(anyhow::anyhow!(
+                "Failed to read directory '{}': {}",
+                safe_path.display(),
+                e
+            )),
         }
     }
 }

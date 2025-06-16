@@ -72,11 +72,6 @@ class DevAgentApp {
         }
     }
 
-    setupTextareaAutoResize() {
-        this.chatInput.addEventListener('input', () => {
-            this.adjustTextareaHeight();
-        });
-    }
 
     adjustTextareaHeight() {
         this.chatInput.style.height = 'auto';
@@ -139,7 +134,7 @@ class DevAgentApp {
             try {
                 // First set API key if not already set
                 console.log('🔑 Setting API key...');
-                await this.setApiKey();
+                await this.initializeApiKey();
 
                 // Send message to Claude through Tauri
                 console.log('📤 Sending message to Claude via Tauri...');
@@ -167,48 +162,14 @@ class DevAgentApp {
 
     // Direct Claude API call (fallback when Tauri not available)
     async directClaudeAPICall(message) {
-        const apiKey = window.CLAUDE_API_KEY || "YOUR_API_KEY_HERE";
-
-        try {
-            const response = await fetch('https://api.anthropic.com/v1/messages', {
-                method: 'POST',
-                headers: {
-                    'x-api-key': apiKey,
-                    'anthropic-version': '2023-06-01',
-                    'content-type': 'application/json'
-                },
-                body: JSON.stringify({
-                    model: 'claude-3-5-sonnet-20241022',
-                    max_tokens: 1000,
-                    messages: [
-                        {
-                            role: 'user',
-                            content: message
-                        }
-                    ]
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`API Error: ${response.status}`);
-            }
-
-            const data = await response.json();
-
-            if (data.content && data.content[0] && data.content[0].text) {
-                return `🌐 [Direct API] ${data.content[0].text}`;
-            } else {
-                throw new Error('Invalid response format');
-            }
-        } catch (error) {
-            console.error('Direct Claude API call failed:', error);
-            return `❌ API Error: ${error.message}. Note: This may be due to CORS restrictions. Use 'tauri dev' for full functionality.`;
-        }
+        // Note: message parameter intentionally unused for security
+        // API keys are not available in browser mode for security reasons
+        return "❌ API Error: Direct API calls not supported in browser mode. API keys are only available through the Tauri desktop application for security reasons. Please use 'npm run dev' to start the desktop application.";
     }
 
-    // Set the Claude API key (only when Tauri is available)
-    async setApiKey() {
-        console.log('🔑 setApiKey() called');
+    // Initialize API key from environment (only when Tauri is available)
+    async initializeApiKey() {
+        console.log('🔑 initializeApiKey() called');
         console.log('- Tauri available:', !!(window.__TAURI__ && window.__TAURI__.core));
         console.log('- apiKeySet flag:', this.apiKeySet);
 
@@ -223,30 +184,28 @@ class DevAgentApp {
             return;
         }
 
-        const apiKey = window.CLAUDE_API_KEY || "YOUR_API_KEY_HERE";
-        console.log('- API key source:', window.CLAUDE_API_KEY ? 'window.CLAUDE_API_KEY' : 'fallback');
-        // Security: Mask API key details in logs
-        console.log('- API key: [REDACTED - Length: ' + apiKey.length + ']');
-        console.log('- API key format valid:', apiKey.startsWith('sk-ant'));
-
-        if (apiKey === "YOUR_API_KEY_HERE" || !apiKey) {
-            console.error('❌ No Claude API key provided. Set CLAUDE_API_KEY environment variable.');
-            this.addMessage('system', '❌ No Claude API key available. Check console for details.');
-            return;
-        }
-
         try {
-            console.log('🚀 Calling Tauri set_claude_api_key command...');
-            const result = await window.__TAURI__.core.invoke('set_claude_api_key', {
-                apiKey: apiKey
-            });
-            console.log('✅ Tauri API key command result:', result);
+            // First check if API key is already available from environment
+            console.log('🔍 Checking API key status...');
+            const hasKey = await window.__TAURI__.core.invoke('get_api_key_status');
+            
+            if (hasKey) {
+                console.log('✅ API key already initialized from environment');
+                this.apiKeySet = true;
+                this.addMessage('system', '✅ Claude API key loaded from environment');
+                return;
+            }
+            
+            // Try to initialize from environment variable
+            console.log('🚀 Attempting to initialize API key from environment...');
+            const result = await window.__TAURI__.core.invoke('initialize_with_env_key');
+            console.log('✅ Environment API key initialization result:', result);
             this.apiKeySet = true;
-            this.addMessage('system', '✅ Claude API key configured successfully');
+            this.addMessage('system', '✅ Claude API key configured from environment');
         } catch (error) {
-            console.error('❌ Failed to set API key via Tauri:', error);
-            this.addMessage('system', `❌ Failed to configure API key: ${error.message || error}`);
-            this.apiKeySet = false; // Allow retry
+            console.error('❌ No API key found in environment:', error);
+            this.addMessage('system', '❌ No Claude API key found. Please set CLAUDE_API_KEY environment variable.');
+            this.apiKeySet = false;
         }
     }
 
@@ -357,34 +316,23 @@ class DevAgentApp {
         this.fileTree.innerHTML = '<div class="file-tree-placeholder"><p>Loading project files...</p></div>';
 
         try {
-            // Simulate loading files (replace with actual file system API)
-            await new Promise(resolve => setTimeout(resolve, 500));
-
-            const mockFiles = [
-                { name: 'Cargo.toml', type: 'file', icon: '📄' },
-                { name: 'build.rs', type: 'file', icon: '🔧' },
-                { name: 'tauri.conf.json', type: 'file', icon: '⚙️' },
-                {
-                    name: 'src/', type: 'folder', icon: '📁', children: [
-                        { name: 'main.rs', type: 'file', icon: '🦀' }
-                    ]
-                },
-                {
-                    name: 'src-tauri/', type: 'folder', icon: '📁', children: [
-                        { name: 'Cargo.toml', type: 'file', icon: '📄' },
-                        { name: 'src/', type: 'folder', icon: '📁' }
-                    ]
-                },
-                {
-                    name: 'ui/', type: 'folder', icon: '📁', children: [
-                        { name: 'index.html', type: 'file', icon: '🌐' },
-                        { name: 'css/', type: 'folder', icon: '📁' },
-                        { name: 'js/', type: 'folder', icon: '📁' }
-                    ]
-                }
-            ];
-
-            this.renderFileTree(mockFiles);
+            if (window.__TAURI__ && window.__TAURI__.core) {
+                // Use Tauri to get real file listing
+                const files = await window.__TAURI__.core.invoke('list_directory', '.');
+                
+                // Convert to the format expected by renderFileTree
+                const treeFiles = files.map(file => ({
+                    name: file.name,
+                    type: file.file_type === 'directory' ? 'folder' : 'file',
+                    icon: file.icon,
+                    path: file.path
+                }));
+                
+                this.renderFileTree(treeFiles);
+            } else {
+                // Browser fallback - show message about desktop mode
+                this.fileTree.innerHTML = '<div class="file-tree-placeholder"><p>📁 File explorer requires desktop mode<br>Use <code>npm run dev</code> to access files</p></div>';
+            }
         } catch (error) {
             console.error('Error loading file tree:', error);
             this.fileTree.innerHTML = '<div class="file-tree-placeholder"><p>Error loading files</p></div>';
@@ -469,20 +417,12 @@ class DevAgentApp {
         console.log('🔍 Environment Check:');
         console.log('- window.__TAURI__:', !!window.__TAURI__);
         console.log('- window.__TAURI__.core:', !!(window.__TAURI__ && window.__TAURI__.core));
-        console.log('- window.CLAUDE_API_KEY defined:', !!window.CLAUDE_API_KEY);
-        // Security: API key details masked in production
-        if (window.CLAUDE_API_KEY && window.CLAUDE_API_KEY !== 'PLACEHOLDER_FOR_DEV_INJECTION') {
-            console.log('- API Key: [REDACTED - Length: ' + window.CLAUDE_API_KEY.length + ']', window.CLAUDE_API_KEY);
-            console.log('- API Key format valid:', window.CLAUDE_API_KEY.startsWith('sk-ant'));
-        } else {
-            console.log('- API Key: [NOT SET OR PLACEHOLDER]');
-        }
+        console.log('- API Key: Will be loaded from environment');
 
         if (window.__TAURI__ && window.__TAURI__.core) {
             console.log('✅ Running in Tauri Desktop Mode');
-            // Security: Don't expose API key status in user messages
-            const apiStatus = (window.CLAUDE_API_KEY && window.CLAUDE_API_KEY !== 'PLACEHOLDER_FOR_DEV_INJECTION') ? 'Configured ✅' : 'Missing ❌';
-            this.addMessage('assistant', '🚀 **DESKTOP MODE ACTIVE** - Full functionality enabled!\n\n🔑 API Key Status: ' + apiStatus + '\n\n✅ You are in the CORRECT window!\n\nI can help you with:\n• File operations (read/write/list)\n• Claude AI integration with tools\n• Development tasks\n\nTry: "Hello Claude, can you list the files in the current directory?"');
+            // API key will be loaded from environment
+            this.addMessage('assistant', '🚀 **DESKTOP MODE ACTIVE** - Full functionality enabled!\n\n🔑 API Key: Loading from environment...\n\n✅ You are in the CORRECT window!\n\nI can help you with:\n• File operations (read/write/list)\n• Claude AI integration with tools\n• Development tasks\n\nTry: "Hello Claude, can you list the files in the current directory?"');
             document.title = '🚀 LLM Dev Agent - DESKTOP MODE ✅';
             // Add visual indicator
             const header = document.querySelector('.app-header');
@@ -497,9 +437,8 @@ class DevAgentApp {
             document.body.appendChild(badge);
         } else {
             console.log('⚠️ Running in Browser Fallback Mode');
-            // Security: Don't expose API key status in user messages
-            const apiStatus = (window.CLAUDE_API_KEY && window.CLAUDE_API_KEY !== 'PLACEHOLDER_FOR_DEV_INJECTION') ? 'Configured ✅' : 'Missing ❌';
-            this.addMessage('assistant', '🌐 **Browser Fallback Mode** - Limited functionality\n\n🔑 API Key Status: ' + apiStatus + '\n\nI can provide basic Claude AI responses, but file operations are not available.\n\n⚠️ For full functionality, close this and run: `npm run dev`\n\n🔍 Look for a **desktop application window**, not this browser tab!');
+            // API key not available in browser mode
+            this.addMessage('assistant', '🌐 **Browser Fallback Mode** - Limited functionality\n\n🔑 API Key: Not available in browser mode\n\nI can provide basic Claude AI responses, but file operations are not available.\n\n⚠️ For full functionality, close this and run: `npm run dev`\n\n🔍 Look for a **desktop application window**, not this browser tab!');
             document.title = 'LLM Dev Agent - Browser Mode ⚠️';
             // Add visual indicator
             const header = document.querySelector('.app-header');
@@ -530,6 +469,11 @@ class DevAgentApp {
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     window.devAgent = new DevAgentApp();
+    
+    // Initialize UX enhancements if available
+    if (typeof UXEnhancements !== 'undefined') {
+        window.uxEnhancements = new UXEnhancements(window.devAgent);
+    }
 });
 
 // Export for use in other modules
