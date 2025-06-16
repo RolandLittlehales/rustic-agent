@@ -44,12 +44,12 @@ console.log('🚀 Starting Tauri development server...');
 const htmlPath = path.join(__dirname, '../ui/index.html');
 const htmlContent = fs.readFileSync(htmlPath, 'utf8');
 
-// Check if script tag already exists
-if (!htmlContent.includes('window.CLAUDE_API_KEY')) {
-    // Add the script tag before closing head
+// Check if placeholder exists and replace it
+if (htmlContent.includes('PLACEHOLDER_FOR_DEV_INJECTION')) {
+    // Replace the placeholder with the actual API key
     const injectedContent = htmlContent.replace(
-        '</head>',
-        `    <script>window.CLAUDE_API_KEY = "${apiKey}";</script>\n</head>`
+        'PLACEHOLDER_FOR_DEV_INJECTION',
+        apiKey
     );
     fs.writeFileSync(htmlPath, injectedContent);
     
@@ -81,12 +81,19 @@ tauriProcess.on('close', (code) => {
 function cleanupApiKey() {
     try {
         const htmlContent = fs.readFileSync(htmlPath, 'utf8');
+        // Replace any actual API key back with the placeholder (improved regex)
         const cleanedContent = htmlContent.replace(
-            /\s*<script>window\.CLAUDE_API_KEY = ".*?";<\/script>\n/,
-            ''
+            /window\.CLAUDE_API_KEY = "[^"]*"/g,
+            'window.CLAUDE_API_KEY = "PLACEHOLDER_FOR_DEV_INJECTION"'
         );
         fs.writeFileSync(htmlPath, cleanedContent);
         console.log('🧹 Cleaned up API key from frontend');
+        
+        // Verify cleanup was successful
+        const verifyContent = fs.readFileSync(htmlPath, 'utf8');
+        if (verifyContent.includes('sk-ant-')) {
+            console.error('⚠️ WARNING: API key may still be present in HTML file!');
+        }
     } catch (error) {
         console.warn('⚠️ Could not clean up API key:', error.message);
     }

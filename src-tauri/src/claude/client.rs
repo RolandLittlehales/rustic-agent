@@ -5,19 +5,27 @@ use crate::claude::{
 };
 use anyhow::{Result, Context};
 use reqwest::Client;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use std::sync::Mutex;
 
 #[derive(Debug)]
 pub struct ClaudeClient {
     config: ClaudeConfig,
     http_client: Client,
     tool_registry: ToolRegistry,
+    last_request: Mutex<Option<Instant>>,
 }
 
 impl ClaudeClient {
     pub fn new(config: ClaudeConfig) -> Result<Self> {
+        // Basic API key validation (just check it's not empty)
+        if config.api_key.is_empty() {
+            return Err(anyhow::anyhow!("API key cannot be empty"));
+        }
+        
         let http_client = Client::builder()
             .timeout(Duration::from_secs(120))
+            .user_agent("LLMDevAgent/0.1.0")
             .build()
             .context("Failed to create HTTP client")?;
 
@@ -32,6 +40,7 @@ impl ClaudeClient {
             config,
             http_client,
             tool_registry,
+            last_request: Mutex::new(None),
         })
     }
 
@@ -59,6 +68,31 @@ impl ClaudeClient {
     }
 
     async fn make_api_call(&self, request: ClaudeRequest) -> Result<ClaudeResponse> {
+        // Rate limiting: ensure at least 1 second between requests
+        let sleep_duration = {
+            let mut last_request = self.last_request.lock().unwrap();
+            if let Some(last_time) = *last_request {
+                let elapsed = last_time.elapsed();
+                if elapsed < Duration::from_secs(1) {
+                    Some(Duration::from_secs(1) - elapsed)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+        
+        if let Some(duration) = sleep_duration {
+            tokio::time::sleep(duration).await;
+        }
+        
+        // Update last request time
+        {
+            let mut last_request = self.last_request.lock().unwrap();
+            *last_request = Some(Instant::now());
+        }
+
         let response = self
             .http_client
             .post("https://api.anthropic.com/v1/messages")

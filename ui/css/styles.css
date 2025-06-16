@@ -422,6 +422,41 @@ body {
     background-color: var(--gray-100);
 }
 
+/* Icon styling using CSS backgrounds for Tauri compatibility */
+.icon {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+    vertical-align: middle;
+}
+
+/* Settings icon */
+.icon-settings {
+    background-image: url("data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='3'%3E%3C/circle%3E%3Cpath d='m12 1 1.5 2.5L16 3l1 1.5L19.5 3 21 5.5 18.5 7 20 9.5 17.5 10 19 12.5 16.5 14 18 16.5 15.5 17 17 19.5 14.5 21 12 18.5 9.5 21 7 19.5 5.5 17 3 16.5 1.5 14 4 12.5 2.5 10 5 9.5 3.5 7 6 5.5 4.5 3 7 1.5 9.5 1z'%3E%3C/path%3E%3C/svg%3E");
+}
+
+/* Refresh icon */
+.icon-refresh {
+    background-image: url("data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpolyline points='23 4 23 10 17 10'%3E%3C/polyline%3E%3Cpolyline points='1 20 1 14 7 14'%3E%3C/polyline%3E%3Cpath d='m3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15'%3E%3C/path%3E%3C/svg%3E");
+}
+
+/* Send icon */
+.icon-send {
+    background-image: url("data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2'%3E%3Cline x1='22' y1='2' x2='11' y2='13'%3E%3C/line%3E%3Cpolygon points='22,2 15,22 11,13 2,9'%3E%3C/polygon%3E%3C/svg%3E");
+}
+
+/* Button hover states for icons */
+.btn-secondary:hover .icon-settings {
+    background-image: url("data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23374151' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='3'%3E%3C/circle%3E%3Cpath d='m12 1 1.5 2.5L16 3l1 1.5L19.5 3 21 5.5 18.5 7 20 9.5 17.5 10 19 12.5 16.5 14 18 16.5 15.5 17 17 19.5 14.5 21 12 18.5 9.5 21 7 19.5 5.5 17 3 16.5 1.5 14 4 12.5 2.5 10 5 9.5 3.5 7 6 5.5 4.5 3 7 1.5 9.5 1z'%3E%3C/path%3E%3C/svg%3E");
+}
+
+.btn-icon:hover .icon-refresh {
+    background-image: url("data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23374151' stroke-width='2'%3E%3Cpolyline points='23 4 23 10 17 10'%3E%3C/polyline%3E%3Cpolyline points='1 20 1 14 7 14'%3E%3C/polyline%3E%3Cpath d='m3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15'%3E%3C/path%3E%3C/svg%3E");
+}
+
 /* Loading Overlay */
 .loading-overlay {
     position: fixed;

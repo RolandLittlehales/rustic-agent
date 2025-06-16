@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "node scripts/dev.js",
     "build": "tauri build",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "icons:generate": "node scripts/generate-icons.js",
+    "icons:install-deps": "sudo apt-get update && sudo apt-get install -y imagemagick"
   },
   "keywords": [
     "tauri",
@@ -16,7 +18,9 @@
     "agent"
   ],
   "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0"
+    "@tauri-apps/cli": "^2.5.0",
+    "sharp": "^0.33.0",
+    "to-ico": "^1.1.5"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0"

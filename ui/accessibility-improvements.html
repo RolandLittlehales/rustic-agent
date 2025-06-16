@@ -1,0 +1,129 @@
+<!-- Accessibility Improvements for LLM Dev Agent -->
+<!-- These code snippets should be integrated into the main index.html -->
+
+<!-- 1. Add skip navigation links at the top -->
+<div class="skip-links">
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <a href="#chat-input" class="skip-link">Skip to chat input</a>
+    <a href="#file-tree" class="skip-link">Skip to file explorer</a>
+</div>
+
+<!-- 2. Improved header with proper landmarks -->
+<header class="app-header" role="banner">
+    <div class="header-content">
+        <h1 class="app-title" id="app-title">LLM Dev Agent</h1>
+        <nav class="header-actions" role="navigation" aria-label="Main navigation">
+            <button class="btn btn-secondary" id="settingsBtn" 
+                    aria-label="Open settings" 
+                    aria-describedby="settings-tooltip">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="m12 1 1.5 2.5L16 3l1 1.5L19.5 3 21 5.5 18.5 7 20 9.5 17.5 10 19 12.5 16.5 14 18 16.5 15.5 17 17 19.5 14.5 21 12 18.5 9.5 21 7 19.5 5.5 17 3 16.5 1.5 14 4 12.5 2.5 10 5 9.5 3.5 7 6 5.5 4.5 3 7 1.5 9.5 1z"></path>
+                </svg>
+                <span class="btn-text">Settings</span>
+            </button>
+            <div id="settings-tooltip" class="sr-only">Open application settings</div>
+        </nav>
+    </div>
+</header>
+
+<!-- 3. Enhanced sidebar with proper ARIA structure -->
+<aside class="sidebar" role="complementary" aria-labelledby="file-explorer-heading">
+    <div class="sidebar-header">
+        <h2 id="file-explorer-heading">File Explorer</h2>
+        <button class="btn btn-icon" id="refreshBtn" 
+                aria-label="Refresh file tree" 
+                title="Refresh file tree">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <polyline points="1 20 1 14 7 14"></polyline>
+                <path d="m3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+        </button>
+    </div>
+    <div class="file-tree" id="fileTree" 
+         role="tree" 
+         aria-labelledby="file-explorer-heading"
+         aria-describedby="file-tree-instructions">
+        <div id="file-tree-instructions" class="sr-only">
+            Use arrow keys to navigate, Enter to select files, Space to expand folders
+        </div>
+        <div class="file-tree-placeholder" role="status" aria-live="polite">
+            <p>Loading project files...</p>
+        </div>
+    </div>
+</aside>
+
+<!-- 4. Enhanced chat section -->
+<section class="chat-container" role="main" aria-labelledby="chat-heading" id="main-content">
+    <div class="chat-header">
+        <h2 id="chat-heading">Chat with AI Assistant</h2>
+        <div class="chat-status" role="status" aria-live="polite">
+            <span class="status-indicator connected" aria-hidden="true"></span>
+            <span class="status-text">Connected to AI assistant</span>
+        </div>
+    </div>
+
+    <div class="chat-messages" id="chatMessages" 
+         role="log" 
+         aria-live="polite" 
+         aria-labelledby="chat-heading"
+         aria-describedby="chat-instructions">
+        <div id="chat-instructions" class="sr-only">
+            Chat conversation with AI assistant. New messages will be announced automatically.
+        </div>
+        <!-- Messages with proper ARIA structure -->
+        <div class="message system-message" role="article" aria-labelledby="msg-1-type">
+            <div id="msg-1-type" class="sr-only">System message</div>
+            <div class="message-content">
+                <p>Welcome to LLM Dev Agent! I'm here to help you with your development tasks.</p>
+            </div>
+            <div class="message-timestamp" aria-label="Message sent">Just now</div>
+        </div>
+    </div>
+
+    <div class="chat-input-container">
+        <form class="chat-input-form" id="chatForm" role="form" aria-labelledby="chat-input-label">
+            <label id="chat-input-label" for="chatInput" class="sr-only">
+                Enter your message to the AI assistant
+            </label>
+            <div class="input-wrapper">
+                <textarea 
+                    id="chatInput" 
+                    name="message"
+                    placeholder="Ask me anything about your code..." 
+                    rows="1"
+                    maxlength="8000"
+                    aria-describedby="char-count input-hint"
+                    aria-required="true"
+                ></textarea>
+                <button type="submit" class="btn btn-primary send-btn" id="sendBtn"
+                        aria-describedby="send-btn-description">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22,2 15,22 11,13 2,9"></polygon>
+                    </svg>
+                    <span class="btn-text">Send</span>
+                </button>
+                <div id="send-btn-description" class="sr-only">Send message to AI assistant</div>
+            </div>
+            <div class="input-footer">
+                <span class="char-count" id="char-count" aria-live="polite">0/8000 characters</span>
+                <span class="input-hint" id="input-hint">Press Ctrl+Enter to send</span>
+            </div>
+        </form>
+    </div>
+</section>
+
+<!-- 5. Enhanced loading overlay -->
+<div class="loading-overlay hidden" id="loadingOverlay" 
+     role="dialog" 
+     aria-modal="true" 
+     aria-labelledby="loading-title"
+     aria-describedby="loading-description">
+    <div class="loading-spinner">
+        <div class="spinner" aria-hidden="true"></div>
+        <p id="loading-title">Processing your request</p>
+        <p id="loading-description" class="sr-only">Please wait while the AI processes your message</p>
+    </div>
+</div>
