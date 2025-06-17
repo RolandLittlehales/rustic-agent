@@ -2,18 +2,23 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::Arc;
-use tauri::async_runtime::Mutex;
+use tauri::{async_runtime::Mutex, Manager};
 
 mod claude;
+mod file_watcher;
 mod security;
+use claude::whitelist::{persistence, WhitelistConfig};
 use claude::{ClaudeClient, ClaudeConfig, Conversation, ConversationMessage};
+use file_watcher::FileWatcherService;
 use serde_json::Value;
+use tokio::sync::RwLock;
 
 // Shared application state
-#[derive(Debug)]
 struct AppState {
     conversation: Arc<Mutex<Conversation>>,
     config: Arc<Mutex<ClaudeConfig>>,
+    whitelist: Arc<RwLock<WhitelistConfig>>,
+    file_watcher: Arc<FileWatcherService>,
 }
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
@@ -55,8 +60,6 @@ async fn initialize_with_env_key(state: tauri::State<'_, AppState>) -> Result<St
         return Err("No API key found in environment variables".to_string());
     }
 
-    println!("🔑 Rust: Initializing with environment API key");
-
     // Update the config with the API key
     {
         let mut config = state.config.lock().await;
@@ -80,10 +83,8 @@ async fn set_claude_api_key(
     state: tauri::State<'_, AppState>,
 ) -> Result<String, String> {
     // Log without exposing key details
-    if api_key.is_empty() {
-        println!("🔑 Rust: set_claude_api_key called with empty key");
-    } else {
-        println!("🔑 Rust: set_claude_api_key called with valid key");
+    if !api_key.is_empty() {
+        // API key provided (length hidden for security)
     }
 
     // Update the config with the API key
@@ -178,31 +179,38 @@ async fn clear_conversation(state: tauri::State<'_, AppState>) -> Result<String,
 }
 
 #[tauri::command]
-async fn list_directory(path: String) -> Result<Vec<FileItem>, String> {
+async fn list_directory(
+    path: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<FileItem>, String> {
     use claude::tools::{AgentTool, ListDirectoryTool};
-    
-    let tool = ListDirectoryTool;
+
+    let mut tool = ListDirectoryTool::new();
+
+    // Set the whitelist for the tool
+    tool.set_whitelist(state.whitelist.clone());
+
     let mut input = serde_json::Map::new();
-    input.insert("path".to_string(), Value::String(path));
-    
-    match tool.execute(Value::Object(input)) {
+    input.insert("path".to_string(), Value::String(path.clone()));
+
+    match tool.execute(Value::Object(input)).await {
         Ok(result) => {
             // Parse the result string into structured data
             let mut items = Vec::new();
             let current_dir = std::env::current_dir().unwrap_or_default();
-            
+
             for line in result.lines() {
                 if line.is_empty() || line.starts_with("...") {
                     continue;
                 }
-                
+
                 if let Some((name, type_info)) = line.rsplit_once(" (") {
                     let file_type = type_info.trim_end_matches(')');
                     let icon = match file_type {
                         "directory" => "📁",
                         _ => {
                             // Determine icon based on file extension
-                            match name.split('.').last().unwrap_or("") {
+                            match name.split('.').next_back().unwrap_or("") {
                                 "rs" => "🦀",
                                 "js" | "ts" => "📄",
                                 "json" => "⚙️",
@@ -210,11 +218,11 @@ async fn list_directory(path: String) -> Result<Vec<FileItem>, String> {
                                 "toml" => "⚙️",
                                 "html" => "🌐",
                                 "css" => "🎨",
-                                _ => "📄"
+                                _ => "📄",
                             }
                         }
                     };
-                    
+
                     items.push(FileItem {
                         name: name.to_string(),
                         file_type: file_type.to_string(),
@@ -223,10 +231,13 @@ async fn list_directory(path: String) -> Result<Vec<FileItem>, String> {
                     });
                 }
             }
-            
+
             Ok(items)
         }
-        Err(e) => Err(format!("Failed to list directory: {}", e)),
+        Err(e) => {
+            println!("❌ Tool execution failed: {}", e);
+            Err(format!("Failed to list directory: {}", e))
+        }
     }
 }
 
@@ -236,6 +247,117 @@ struct FileItem {
     file_type: String,
     icon: String,
     path: String,
+}
+
+// Whitelist management commands
+#[tauri::command]
+async fn whitelist_add_directory(
+    path: String,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let mut whitelist = state.whitelist.write().await;
+
+    match whitelist.add_directory(&path) {
+        Ok(canonical_path) => {
+            // Save to disk
+            if let Err(e) = persistence::save(&app, &whitelist).await {
+                return Err(format!("Failed to save whitelist: {}", e));
+            }
+            Ok(format!("Added directory: {}", canonical_path.display()))
+        }
+        Err(e) => Err(format!("Failed to add directory: {}", e)),
+    }
+}
+
+#[tauri::command]
+async fn whitelist_remove_directory(
+    path: String,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let mut whitelist = state.whitelist.write().await;
+
+    match whitelist.remove_directory(&path) {
+        Ok(removed) => {
+            if removed {
+                // Save to disk
+                if let Err(e) = persistence::save(&app, &whitelist).await {
+                    return Err(format!("Failed to save whitelist: {}", e));
+                }
+                Ok(format!("Removed directory: {}", path))
+            } else {
+                Err("Directory not found in whitelist".to_string())
+            }
+        }
+        Err(e) => Err(format!("Failed to remove directory: {}", e)),
+    }
+}
+
+#[tauri::command]
+async fn whitelist_list_directories(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let whitelist = state.whitelist.read().await;
+    let directories = whitelist
+        .list_directories()
+        .into_iter()
+        .map(|path| path.display().to_string())
+        .collect();
+    Ok(directories)
+}
+
+#[tauri::command]
+async fn whitelist_set_enabled(
+    enabled: bool,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let mut whitelist = state.whitelist.write().await;
+    whitelist.set_enabled(enabled);
+
+    // Save to disk
+    if let Err(e) = persistence::save(&app, &whitelist).await {
+        return Err(format!("Failed to save whitelist: {}", e));
+    }
+
+    Ok(format!(
+        "Whitelist {}",
+        if enabled { "enabled" } else { "disabled" }
+    ))
+}
+
+#[tauri::command]
+async fn whitelist_get_config(
+    state: tauri::State<'_, AppState>,
+) -> Result<WhitelistConfig, String> {
+    let whitelist = state.whitelist.read().await;
+    Ok(whitelist.clone())
+}
+
+// File watching commands
+#[tauri::command]
+async fn start_file_watching(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    // Get whitelisted directories and start watching them
+    let whitelist = state.whitelist.read().await;
+    let directories = whitelist.list_directories();
+
+    for dir in directories {
+        if let Err(e) = state.file_watcher.start_watching(dir.clone()).await {
+            eprintln!("Failed to watch directory {}: {}", dir.display(), e);
+        }
+    }
+
+    // Start heartbeat
+    state.file_watcher.start_heartbeat();
+
+    Ok("File watching started".to_string())
+}
+
+#[tauri::command]
+async fn stop_file_watching(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    state.file_watcher.stop_all().await;
+    Ok("File watching stopped".to_string())
 }
 
 fn main() {
@@ -251,13 +373,42 @@ fn main() {
         ..Default::default()
     };
 
-    let app_state = AppState {
-        conversation: Arc::new(Mutex::new(Conversation::default())),
-        config: Arc::new(Mutex::new(initial_config)),
-    };
-
     tauri::Builder::default()
-        .manage(app_state)
+        .setup(move |app| {
+            // Load whitelist configuration from disk or create default
+            let mut whitelist_config = tauri::async_runtime::block_on(async {
+                persistence::load(app.handle()).await.unwrap_or_else(|e| {
+                    eprintln!("Failed to load whitelist config: {}", e);
+                    WhitelistConfig::default()
+                })
+            });
+
+            // Ensure current directory is always accessible by default
+            if let Ok(current_dir) = std::env::current_dir() {
+                if whitelist_config.list_directories().is_empty() {
+                    println!(
+                        "📁 Adding current directory to whitelist: {}",
+                        current_dir.display()
+                    );
+                    if let Err(e) = whitelist_config.add_directory(&current_dir) {
+                        eprintln!("Failed to add current directory to whitelist: {}", e);
+                    }
+                }
+            }
+
+            // Create file watcher service
+            let file_watcher = Arc::new(FileWatcherService::new(app.handle().clone()));
+
+            let app_state = AppState {
+                conversation: Arc::new(Mutex::new(Conversation::default())),
+                config: Arc::new(Mutex::new(initial_config)),
+                whitelist: Arc::new(RwLock::new(whitelist_config)),
+                file_watcher,
+            };
+
+            app.manage(app_state);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             get_api_key_status,
@@ -267,6 +418,13 @@ fn main() {
             get_conversation_history,
             clear_conversation,
             list_directory,
+            whitelist_add_directory,
+            whitelist_remove_directory,
+            whitelist_list_directories,
+            whitelist_set_enabled,
+            whitelist_get_config,
+            start_file_watching,
+            stop_file_watching,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

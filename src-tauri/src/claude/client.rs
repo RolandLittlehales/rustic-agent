@@ -1,12 +1,14 @@
 use crate::claude::{
     tools::{AgentTool, ToolRegistry},
     types::*,
+    whitelist::WhitelistConfig,
     ClaudeConfig, Conversation,
 };
 use anyhow::{Context, Result};
 use reqwest::Client;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
 
 #[derive(Debug)]
 pub struct ClaudeClient {
@@ -32,9 +34,9 @@ impl ClaudeClient {
         let mut tool_registry = ToolRegistry::new();
 
         // Register default tools
-        tool_registry.register(crate::claude::tools::ReadFileTool);
-        tool_registry.register(crate::claude::tools::WriteFileTool);
-        tool_registry.register(crate::claude::tools::ListDirectoryTool);
+        tool_registry.register(crate::claude::tools::ReadFileTool::new());
+        tool_registry.register(crate::claude::tools::WriteFileTool::new());
+        tool_registry.register(crate::claude::tools::ListDirectoryTool::new());
 
         Ok(Self {
             config,
@@ -47,6 +49,12 @@ impl ClaudeClient {
     #[allow(dead_code)]
     pub fn register_tool<T: AgentTool + 'static>(&mut self, tool: T) {
         self.tool_registry.register(tool);
+    }
+
+    /// Set the whitelist configuration for all tools
+    #[allow(dead_code)]
+    pub fn set_whitelist(&mut self, whitelist: Arc<RwLock<WhitelistConfig>>) {
+        self.tool_registry.set_whitelist(whitelist);
     }
 
     pub async fn send_message(
@@ -136,7 +144,7 @@ impl ClaudeClient {
                     result_parts.push(text.clone());
                 }
                 ContentBlock::ToolUse { id: _, name, input } => {
-                    match self.tool_registry.execute_tool(name, input.clone()) {
+                    match self.tool_registry.execute_tool(name, input.clone()).await {
                         Ok(tool_result) => {
                             result_parts.push(format!("Tool '{}' result: {}", name, tool_result));
                         }

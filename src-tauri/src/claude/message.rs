@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -10,12 +9,14 @@ pub enum MessageRole {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct MessageContent {
     #[serde(rename = "type")]
     pub content_type: String,
     pub text: String,
 }
 
+#[allow(dead_code)]
 impl MessageContent {
     pub fn text(text: impl Into<String>) -> Self {
         Self {
@@ -26,22 +27,24 @@ impl MessageContent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct Message {
     pub role: MessageRole,
     pub content: Vec<MessageContent>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_calls: Option<Vec<crate::claude::tool::ToolCall>>,
+    // Tool calls functionality removed - using separate tool system
+    // #[serde(skip_serializing_if = "Option::is_none")]
+    // pub tool_calls: Option<Vec<crate::claude::tool::ToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
 }
 
+#[allow(dead_code)]
 impl Message {
     /// Create a new user message
     pub fn user(content: impl Into<String>) -> Self {
         Self {
             role: MessageRole::User,
             content: vec![MessageContent::text(content)],
-            tool_calls: None,
             tool_call_id: None,
         }
     }
@@ -51,7 +54,6 @@ impl Message {
         Self {
             role: MessageRole::Assistant,
             content: vec![MessageContent::text(content)],
-            tool_calls: None,
             tool_call_id: None,
         }
     }
@@ -61,27 +63,26 @@ impl Message {
         Self {
             role: MessageRole::System,
             content: vec![MessageContent::text(content)],
-            tool_calls: None,
             tool_call_id: None,
         }
     }
 
-    /// Create an assistant message with tool calls
-    pub fn assistant_with_tools(content: impl Into<String>, tool_calls: Vec<crate::claude::tool::ToolCall>) -> Self {
-        Self {
-            role: MessageRole::Assistant,
-            content: vec![MessageContent::text(content)],
-            tool_calls: Some(tool_calls),
-            tool_call_id: None,
-        }
-    }
+    // Tool calls functionality removed - using separate tool system
+    // /// Create an assistant message with tool calls
+    // pub fn assistant_with_tools(content: impl Into<String>, tool_calls: Vec<crate::claude::tool::ToolCall>) -> Self {
+    //     Self {
+    //         role: MessageRole::Assistant,
+    //         content: vec![MessageContent::text(content)],
+    //         tool_calls: Some(tool_calls),
+    //         tool_call_id: None,
+    //     }
+    // }
 
     /// Create a tool result message
     pub fn tool_result(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
             role: MessageRole::User,
             content: vec![MessageContent::text(content)],
-            tool_calls: None,
             tool_call_id: Some(tool_call_id.into()),
         }
     }
@@ -96,18 +97,21 @@ impl Message {
             .join("\n")
     }
 
-    /// Check if this message has tool calls
-    pub fn has_tool_calls(&self) -> bool {
-        self.tool_calls.as_ref().map_or(false, |calls| !calls.is_empty())
-    }
+    // Tool calls functionality removed - using separate tool system
+    // /// Check if this message has tool calls
+    // pub fn has_tool_calls(&self) -> bool {
+    //     self.tool_calls.as_ref().map_or(false, |calls| !calls.is_empty())
+    // }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct ConversationHistory {
     messages: Vec<Message>,
     system_message: Option<String>,
 }
 
+#[allow(dead_code)]
 impl ConversationHistory {
     /// Create a new conversation history
     pub fn new() -> Self {
@@ -140,10 +144,11 @@ impl ConversationHistory {
         self.add_message(Message::assistant(content));
     }
 
-    /// Add an assistant message with tool calls
-    pub fn add_assistant_message_with_tools(&mut self, content: impl Into<String>, tool_calls: Vec<crate::claude::tool::ToolCall>) {
-        self.add_message(Message::assistant_with_tools(content, tool_calls));
-    }
+    // Tool calls functionality removed - using separate tool system
+    // /// Add an assistant message with tool calls
+    // pub fn add_assistant_message_with_tools(&mut self, content: impl Into<String>, tool_calls: Vec<crate::claude::tool::ToolCall>) {
+    //     self.add_message(Message::assistant_with_tools(content, tool_calls));
+    // }
 
     /// Add a tool result message
     pub fn add_tool_result(&mut self, tool_call_id: impl Into<String>, content: impl Into<String>) {

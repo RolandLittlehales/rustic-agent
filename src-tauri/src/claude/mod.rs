@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
 
 pub mod client;
+pub mod error;
+pub mod message;
 pub mod tools;
 pub mod types;
+pub mod whitelist;
 
 pub use client::ClaudeClient;
 
