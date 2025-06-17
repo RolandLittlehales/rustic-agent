@@ -1,12 +1,14 @@
 use crate::claude::{
+    tools::{AgentTool, ToolRegistry},
     types::*,
-    tools::{ToolRegistry, AgentTool},
+    whitelist::WhitelistConfig,
     ClaudeConfig, Conversation,
 };
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use reqwest::Client;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use std::sync::Mutex;
+use tokio::sync::RwLock;
 
 #[derive(Debug)]
 pub struct ClaudeClient {
@@ -22,7 +24,7 @@ impl ClaudeClient {
         if config.api_key.is_empty() {
             return Err(anyhow::anyhow!("API key cannot be empty"));
         }
-        
+
         let http_client = Client::builder()
             .timeout(Duration::from_secs(120))
             .user_agent("LLMDevAgent/0.1.0")
@@ -30,11 +32,11 @@ impl ClaudeClient {
             .context("Failed to create HTTP client")?;
 
         let mut tool_registry = ToolRegistry::new();
-        
+
         // Register default tools
-        tool_registry.register(crate::claude::tools::ReadFileTool);
-        tool_registry.register(crate::claude::tools::WriteFileTool);
-        tool_registry.register(crate::claude::tools::ListDirectoryTool);
+        tool_registry.register(crate::claude::tools::ReadFileTool::new());
+        tool_registry.register(crate::claude::tools::WriteFileTool::new());
+        tool_registry.register(crate::claude::tools::ListDirectoryTool::new());
 
         Ok(Self {
             config,
@@ -44,11 +46,22 @@ impl ClaudeClient {
         })
     }
 
+    #[allow(dead_code)]
     pub fn register_tool<T: AgentTool + 'static>(&mut self, tool: T) {
         self.tool_registry.register(tool);
     }
 
-    pub async fn send_message(&self, conversation: &Conversation, message: String) -> Result<String> {
+    /// Set the whitelist configuration for all tools
+    #[allow(dead_code)]
+    pub fn set_whitelist(&mut self, whitelist: Arc<RwLock<WhitelistConfig>>) {
+        self.tool_registry.set_whitelist(whitelist);
+    }
+
+    pub async fn send_message(
+        &self,
+        conversation: &Conversation,
+        message: String,
+    ) -> Result<String> {
         let mut messages = self.conversation_to_claude_messages(conversation);
         messages.push(ClaudeMessage::user_text(message));
 
@@ -70,7 +83,7 @@ impl ClaudeClient {
     async fn make_api_call(&self, request: ClaudeRequest) -> Result<ClaudeResponse> {
         // Rate limiting: ensure at least 1 second between requests
         let sleep_duration = {
-            let mut last_request = self.last_request.lock().unwrap();
+            let last_request = self.last_request.lock().unwrap();
             if let Some(last_time) = *last_request {
                 let elapsed = last_time.elapsed();
                 if elapsed < Duration::from_secs(1) {
@@ -82,11 +95,11 @@ impl ClaudeClient {
                 None
             }
         };
-        
+
         if let Some(duration) = sleep_duration {
             tokio::time::sleep(duration).await;
         }
-        
+
         // Update last request time
         {
             let mut last_request = self.last_request.lock().unwrap();
@@ -131,7 +144,7 @@ impl ClaudeClient {
                     result_parts.push(text.clone());
                 }
                 ContentBlock::ToolUse { id: _, name, input } => {
-                    match self.tool_registry.execute_tool(name, input.clone()) {
+                    match self.tool_registry.execute_tool(name, input.clone()).await {
                         Ok(tool_result) => {
                             result_parts.push(format!("Tool '{}' result: {}", name, tool_result));
                         }
@@ -161,16 +174,21 @@ impl ClaudeClient {
             .collect()
     }
 
-    pub async fn chat(&self, conversation: &mut Conversation, user_message: String) -> Result<String> {
+    pub async fn chat(
+        &self,
+        conversation: &mut Conversation,
+        user_message: String,
+    ) -> Result<String> {
         conversation.add_user_message(user_message.clone());
-        
+
         let response = self.send_message(conversation, user_message).await?;
-        
+
         conversation.add_assistant_message(response.clone());
-        
+
         Ok(response)
     }
 
+    #[allow(dead_code)]
     pub fn get_available_tools(&self) -> Vec<String> {
         self.tool_registry
             .get_all_tools()

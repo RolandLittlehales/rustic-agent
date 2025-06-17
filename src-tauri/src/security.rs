@@ -1,4 +1,6 @@
 // Security utilities and configuration
+#![allow(dead_code)]
+
 use anyhow::Result;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -16,8 +18,8 @@ impl Default for SecurityConfig {
         let mut allowed_extensions = HashSet::new();
         // Allow common development file types
         for ext in &[
-            "rs", "js", "ts", "html", "css", "json", "toml", "md", "txt", 
-            "yml", "yaml", "xml", "svg", "png", "jpg", "jpeg", "gif", "ico"
+            "rs", "js", "ts", "html", "css", "json", "toml", "md", "txt", "yml", "yaml", "xml",
+            "svg", "png", "jpg", "jpeg", "gif", "ico",
         ] {
             allowed_extensions.insert(ext.to_string());
         }
@@ -42,7 +44,7 @@ impl Default for SecurityConfig {
                 "id_ecdsa".to_string(),
                 "id_ed25519".to_string(),
             ],
-            max_file_size: 10 * 1024 * 1024, // 10MB
+            max_file_size: 10 * 1024 * 1024,    // 10MB
             max_content_size: 50 * 1024 * 1024, // 50MB
             rate_limit_seconds: 1,
         }
@@ -51,48 +53,51 @@ impl Default for SecurityConfig {
 
 pub fn validate_file_access(path: &str, config: &SecurityConfig) -> Result<PathBuf> {
     let path = Path::new(path);
-    
+
     // Get current working directory as the allowed base
     let current_dir = std::env::current_dir()
         .map_err(|e| anyhow::anyhow!("Cannot determine current directory: {}", e))?;
-    
+
     // Resolve the path (handles . and .. components)
     let canonical_path = if path.is_absolute() {
         path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
     } else {
-        current_dir.join(path).canonicalize().unwrap_or_else(|_| current_dir.join(path))
+        current_dir
+            .join(path)
+            .canonicalize()
+            .unwrap_or_else(|_| current_dir.join(path))
     };
-    
+
     // Ensure the path is within the current directory or its subdirectories
     if !canonical_path.starts_with(&current_dir) {
         return Err(anyhow::anyhow!(
-            "Access denied: Path '{}' is outside allowed directory", 
+            "Access denied: Path '{}' is outside allowed directory",
             path.display()
         ));
     }
-    
+
     // Check blocked paths
     let path_str = canonical_path.to_string_lossy().to_lowercase();
     for blocked in &config.blocked_paths {
         if path_str.contains(&blocked.to_lowercase()) {
             return Err(anyhow::anyhow!(
-                "Access denied: Path contains blocked pattern '{}'", 
+                "Access denied: Path contains blocked pattern '{}'",
                 blocked
             ));
         }
     }
-    
+
     // Check file extension if it's a file
     if let Some(extension) = canonical_path.extension() {
         let ext = extension.to_string_lossy().to_lowercase();
         if !config.allowed_file_extensions.contains(&ext) {
             return Err(anyhow::anyhow!(
-                "Access denied: File extension '{}' not allowed", 
+                "Access denied: File extension '{}' not allowed",
                 ext
             ));
         }
     }
-    
+
     Ok(canonical_path)
 }
 
@@ -109,8 +114,8 @@ pub fn sanitize_api_key_for_logging(api_key: &str) -> String {
 pub fn validate_content_size(content: &str, max_size: usize) -> Result<()> {
     if content.len() > max_size {
         return Err(anyhow::anyhow!(
-            "Content too large: {} bytes (limit: {} bytes)", 
-            content.len(), 
+            "Content too large: {} bytes (limit: {} bytes)",
+            content.len(),
             max_size
         ));
     }
@@ -138,7 +143,7 @@ mod tests {
         let config = SecurityConfig::default();
         let current_dir = env::current_dir().unwrap();
         let test_file = current_dir.join("test.rs");
-        
+
         let result = validate_file_access("test.rs", &config);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), test_file);
@@ -147,7 +152,7 @@ mod tests {
     #[test]
     fn test_validate_file_access_blocked_path() {
         let config = SecurityConfig::default();
-        
+
         let result = validate_file_access("/etc/passwd", &config);
         assert!(result.is_err());
     }
@@ -156,7 +161,10 @@ mod tests {
     fn test_sanitize_api_key() {
         assert_eq!(sanitize_api_key_for_logging(""), "[EMPTY]");
         assert_eq!(sanitize_api_key_for_logging("short"), "[REDACTED]");
-        assert_eq!(sanitize_api_key_for_logging("sk-ant-1234567890"), "[REDACTED-sk-ant-****]");
+        assert_eq!(
+            sanitize_api_key_for_logging("sk-ant-1234567890"),
+            "[REDACTED-sk-ant-****]"
+        );
     }
 
     #[test]

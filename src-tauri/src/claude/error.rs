@@ -1,14 +1,16 @@
 use std::fmt;
 
 #[derive(Debug)]
+#[allow(dead_code)]
+#[allow(clippy::enum_variant_names)]
 pub enum ClaudeError {
     /// HTTP request failed
     HttpError(reqwest::Error),
     /// JSON serialization/deserialization failed
     JsonError(serde_json::Error),
     /// API returned an error response
-    ApiError { 
-        status: u16, 
+    ApiError {
+        status: u16,
         message: String,
         error_type: Option<String>,
         param: Option<String>,
@@ -22,9 +24,7 @@ pub enum ClaudeError {
     /// Network timeout
     TimeoutError,
     /// Rate limit exceeded
-    RateLimitError { 
-        retry_after: Option<u64> 
-    },
+    RateLimitError { retry_after: Option<u64> },
 }
 
 impl fmt::Display for ClaudeError {
@@ -32,7 +32,12 @@ impl fmt::Display for ClaudeError {
         match self {
             ClaudeError::HttpError(e) => write!(f, "HTTP request failed: {}", e),
             ClaudeError::JsonError(e) => write!(f, "JSON processing failed: {}", e),
-            ClaudeError::ApiError { status, message, error_type, param } => {
+            ClaudeError::ApiError {
+                status,
+                message,
+                error_type,
+                param,
+            } => {
                 write!(f, "API error ({}): {}", status, message)?;
                 if let Some(error_type) = error_type {
                     write!(f, " [type: {}]", error_type)?;
@@ -83,4 +88,5 @@ impl From<serde_json::Error> for ClaudeError {
     }
 }
 
+#[allow(dead_code)]
 pub type ClaudeResult<T> = Result<T, ClaudeError>;

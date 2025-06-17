@@ -1,14 +1,20 @@
-use crate::claude::types::{Tool, ToolInputSchema, PropertySchema};
+use crate::claude::types::{PropertySchema, Tool, ToolInputSchema};
+use crate::claude::whitelist::{validate_path, FileOperation, WhitelistConfig};
+use anyhow::Result;
+use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use anyhow::Result;
+use std::path::Path;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
+#[async_trait]
 pub trait AgentTool: Send + Sync + std::fmt::Debug {
     fn name(&self) -> &str;
     fn description(&self) -> &str;
     fn input_schema(&self) -> ToolInputSchema;
-    fn execute(&self, input: Value) -> Result<String>;
+    async fn execute(&self, input: Value) -> Result<String>;
+    fn set_whitelist(&mut self, whitelist: Arc<RwLock<WhitelistConfig>>);
 }
 
 #[derive(Debug)]
@@ -32,9 +38,9 @@ impl ToolRegistry {
         self.tools.get(name).map(|tool| tool.as_ref())
     }
 
-    pub fn execute_tool(&self, name: &str, input: Value) -> Result<String> {
+    pub async fn execute_tool(&self, name: &str, input: Value) -> Result<String> {
         match self.get_tool(name) {
-            Some(tool) => tool.execute(input),
+            Some(tool) => tool.execute(input).await,
             None => Err(anyhow::anyhow!("Tool '{}' not found", name)),
         }
     }
@@ -49,6 +55,13 @@ impl ToolRegistry {
             })
             .collect()
     }
+
+    #[allow(dead_code)]
+    pub fn set_whitelist(&mut self, whitelist: Arc<RwLock<WhitelistConfig>>) {
+        for tool in self.tools.values_mut() {
+            tool.set_whitelist(whitelist.clone());
+        }
+    }
 }
 
 impl Default for ToolRegistry {
@@ -57,55 +70,23 @@ impl Default for ToolRegistry {
     }
 }
 
-// Security utilities for path validation
-fn validate_and_sanitize_path(path: &str) -> Result<PathBuf> {
-    let path = Path::new(path);
-    
-    // Get current working directory as the allowed base
-    let current_dir = std::env::current_dir()
-        .map_err(|e| anyhow::anyhow!("Cannot determine current directory: {}", e))?;
-    
-    // Resolve the path (handles . and .. components)
-    let canonical_path = if path.is_absolute() {
-        path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
-    } else {
-        current_dir.join(path).canonicalize().unwrap_or_else(|_| current_dir.join(path))
-    };
-    
-    // Ensure the path is within the current directory or its subdirectories
-    if !canonical_path.starts_with(&current_dir) {
-        return Err(anyhow::anyhow!(
-            "Access denied: Path '{}' is outside allowed directory", 
-            path.display()
-        ));
-    }
-    
-    // Additional security checks
-    let path_str = canonical_path.to_string_lossy();
-    
-    // Block access to sensitive directories
-    let forbidden_patterns = [
-        "/etc/", "/root/", "/home/", "/var/", "/usr/", "/sys/", "/proc/",
-        "\\Windows\\", "\\System32\\", "\\Users\\", "\\Program Files\\",
-        ".ssh", ".aws", ".config", ".env", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"
-    ];
-    
-    for pattern in &forbidden_patterns {
-        if path_str.contains(pattern) {
-            return Err(anyhow::anyhow!(
-                "Access denied: Path contains forbidden pattern '{}'", 
-                pattern
-            ));
-        }
-    }
-    
-    Ok(canonical_path)
+#[derive(Debug)]
+pub struct ReadFileTool {
+    whitelist: Option<Arc<RwLock<WhitelistConfig>>>,
 }
 
-#[derive(Debug)]
-pub struct ReadFileTool;
+impl ReadFileTool {
+    pub fn new() -> Self {
+        Self { whitelist: None }
+    }
+}
 
+#[async_trait]
 impl AgentTool for ReadFileTool {
+    fn set_whitelist(&mut self, whitelist: Arc<RwLock<WhitelistConfig>>) {
+        self.whitelist = Some(whitelist);
+    }
+
     fn name(&self) -> &str {
         "read_file"
     }
@@ -133,38 +114,67 @@ impl AgentTool for ReadFileTool {
         }
     }
 
-    fn execute(&self, input: Value) -> Result<String> {
+    async fn execute(&self, input: Value) -> Result<String> {
         let path_str = input
             .get("path")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing or invalid 'path' parameter"))?;
 
-        // Validate and sanitize the path
-        let safe_path = validate_and_sanitize_path(path_str)?;
+        // Validate and sanitize the path using whitelist
+        let safe_path = if let Some(whitelist) = &self.whitelist {
+            let whitelist_guard = whitelist.read().await;
+            validate_path(path_str, &whitelist_guard, FileOperation::Read)?
+        } else {
+            // Fallback to basic validation if no whitelist is set
+            let current_dir = std::env::current_dir()
+                .map_err(|e| anyhow::anyhow!("Cannot determine current directory: {}", e))?;
+            let path = Path::new(path_str);
+            let canonical_path = if path.is_absolute() {
+                path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+            } else {
+                current_dir
+                    .join(path)
+                    .canonicalize()
+                    .unwrap_or_else(|_| current_dir.join(path))
+            };
 
-        // Additional size check to prevent reading huge files
-        if let Ok(metadata) = std::fs::metadata(&safe_path) {
-            const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10MB limit
-            if metadata.len() > MAX_FILE_SIZE {
+            if !canonical_path.starts_with(&current_dir) {
                 return Err(anyhow::anyhow!(
-                    "File too large: {} bytes (limit: {} bytes)", 
-                    metadata.len(), 
-                    MAX_FILE_SIZE
+                    "Access denied: Path '{}' is outside allowed directory",
+                    canonical_path.display()
                 ));
             }
-        }
+            canonical_path
+        };
 
         match std::fs::read_to_string(&safe_path) {
             Ok(content) => Ok(content),
-            Err(e) => Err(anyhow::anyhow!("Failed to read file '{}': {}", safe_path.display(), e)),
+            Err(e) => Err(anyhow::anyhow!(
+                "Failed to read file '{}': {}",
+                safe_path.display(),
+                e
+            )),
         }
     }
 }
 
 #[derive(Debug)]
-pub struct WriteFileTool;
+pub struct WriteFileTool {
+    whitelist: Option<Arc<RwLock<WhitelistConfig>>>,
+}
 
+impl WriteFileTool {
+    pub fn new() -> Self {
+        Self { whitelist: None }
+    }
+}
+
+#[async_trait]
 impl AgentTool for WriteFileTool {
+    fn set_whitelist(&mut self, whitelist: Arc<RwLock<WhitelistConfig>>) {
+        self.whitelist = Some(whitelist);
+    }
+
     fn name(&self) -> &str {
         "write_file"
     }
@@ -200,7 +210,7 @@ impl AgentTool for WriteFileTool {
         }
     }
 
-    fn execute(&self, input: Value) -> Result<String> {
+    async fn execute(&self, input: Value) -> Result<String> {
         let path_str = input
             .get("path")
             .and_then(|v| v.as_str())
@@ -211,47 +221,95 @@ impl AgentTool for WriteFileTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing or invalid 'content' parameter"))?;
 
-        // Validate and sanitize the path
-        let safe_path = validate_and_sanitize_path(path_str)?;
+        // Validate and sanitize the path using whitelist
+        let safe_path = if let Some(whitelist) = &self.whitelist {
+            let whitelist_guard = whitelist.read().await;
+            validate_path(path_str, &whitelist_guard, FileOperation::Write)?
+        } else {
+            // Fallback to basic validation if no whitelist is set
+            let current_dir = std::env::current_dir()
+                .map_err(|e| anyhow::anyhow!("Cannot determine current directory: {}", e))?;
+            let path = Path::new(path_str);
+            let canonical_path = if path.is_absolute() {
+                path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+            } else {
+                current_dir
+                    .join(path)
+                    .canonicalize()
+                    .unwrap_or_else(|_| current_dir.join(path))
+            };
+
+            if !canonical_path.starts_with(&current_dir) {
+                return Err(anyhow::anyhow!(
+                    "Access denied: Path '{}' is outside allowed directory",
+                    canonical_path.display()
+                ));
+            }
+            canonical_path
+        };
 
         // Content size validation
         const MAX_CONTENT_SIZE: usize = 50 * 1024 * 1024; // 50MB limit
         if content.len() > MAX_CONTENT_SIZE {
             return Err(anyhow::anyhow!(
-                "Content too large: {} bytes (limit: {} bytes)", 
-                content.len(), 
+                "Content too large: {} bytes (limit: {} bytes)",
+                content.len(),
                 MAX_CONTENT_SIZE
             ));
         }
 
         // Check if we're trying to overwrite important files
-        let file_name = safe_path.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
-        
+        let file_name = safe_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
         let protected_files = [
-            "Cargo.toml", "package.json", ".env", ".gitignore", 
-            "tauri.conf.json", "main.rs", "lib.rs"
+            "Cargo.toml",
+            "package.json",
+            ".env",
+            ".gitignore",
+            "tauri.conf.json",
+            "main.rs",
+            "lib.rs",
         ];
-        
+
         if protected_files.contains(&file_name) {
             return Err(anyhow::anyhow!(
-                "Access denied: Cannot overwrite protected file '{}'", 
+                "Access denied: Cannot overwrite protected file '{}'",
                 file_name
             ));
         }
 
         match std::fs::write(&safe_path, content) {
-            Ok(_) => Ok(format!("Successfully wrote {} bytes to '{}'", content.len(), safe_path.display())),
-            Err(e) => Err(anyhow::anyhow!("Failed to write file '{}': {}", safe_path.display(), e)),
+            Ok(_) => Ok(format!(
+                "Successfully wrote {} bytes to '{}'",
+                content.len(),
+                safe_path.display()
+            )),
+            Err(e) => Err(anyhow::anyhow!(
+                "Failed to write file '{}': {}",
+                safe_path.display(),
+                e
+            )),
         }
     }
 }
 
 #[derive(Debug)]
-pub struct ListDirectoryTool;
+pub struct ListDirectoryTool {
+    whitelist: Option<Arc<RwLock<WhitelistConfig>>>,
+}
 
+impl ListDirectoryTool {
+    pub fn new() -> Self {
+        Self { whitelist: None }
+    }
+}
+
+#[async_trait]
 impl AgentTool for ListDirectoryTool {
+    fn set_whitelist(&mut self, whitelist: Arc<RwLock<WhitelistConfig>>) {
+        self.whitelist = Some(whitelist);
+    }
+
     fn name(&self) -> &str {
         "list_directory"
     }
@@ -279,50 +337,107 @@ impl AgentTool for ListDirectoryTool {
         }
     }
 
-    fn execute(&self, input: Value) -> Result<String> {
+    async fn execute(&self, input: Value) -> Result<String> {
+        println!("🔧 ListDirectoryTool::execute called");
+        println!("📥 Input: {:?}", input);
+
         let path_str = input
             .get("path")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing or invalid 'path' parameter"))?;
 
-        // Validate and sanitize the path
-        let safe_path = validate_and_sanitize_path(path_str)?;
+        println!("📁 Path to list: '{}'", path_str);
 
+        // Validate and sanitize the path using whitelist
+        let safe_path = if let Some(whitelist) = &self.whitelist {
+            println!("🔒 Using whitelist validation");
+            let whitelist_guard = whitelist.read().await;
+            println!("🔓 Acquired whitelist read lock");
+
+            match validate_path(path_str, &whitelist_guard, FileOperation::List) {
+                Ok(path) => path,
+                Err(e) => {
+                    println!("❌ Path validation failed: {}", e);
+                    return Err(e);
+                }
+            }
+        } else {
+            println!("⚠️ No whitelist set, using fallback validation");
+            // Fallback to basic validation if no whitelist is set
+            let current_dir = std::env::current_dir()
+                .map_err(|e| anyhow::anyhow!("Cannot determine current directory: {}", e))?;
+            let path = Path::new(path_str);
+            let canonical_path = if path.is_absolute() {
+                path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+            } else {
+                current_dir
+                    .join(path)
+                    .canonicalize()
+                    .unwrap_or_else(|_| current_dir.join(path))
+            };
+
+            if !canonical_path.starts_with(&current_dir) {
+                return Err(anyhow::anyhow!(
+                    "Access denied: Path '{}' is outside allowed directory",
+                    canonical_path.display()
+                ));
+            }
+            canonical_path
+        };
+
+        println!("📂 Attempting to read directory: {}", safe_path.display());
         match std::fs::read_dir(&safe_path) {
             Ok(entries) => {
                 let mut result = Vec::new();
                 let mut count = 0;
                 const MAX_ENTRIES: usize = 1000; // Limit directory listing
-                
+
                 for entry in entries {
                     if count >= MAX_ENTRIES {
-                        result.push(format!("... (truncated, showing first {} entries)", MAX_ENTRIES));
+                        result.push(format!(
+                            "... (truncated, showing first {} entries)",
+                            MAX_ENTRIES
+                        ));
                         break;
                     }
-                    
+
                     match entry {
                         Ok(entry) => {
                             let name = entry.file_name().to_string_lossy().to_string();
-                            
+
                             // Skip hidden files and sensitive directories
                             if name.starts_with('.') && !name.eq(".") && !name.eq("..") {
                                 continue;
                             }
-                            
-                            let file_type = if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-                                "directory"
-                            } else {
-                                "file"
-                            };
+
+                            let file_type =
+                                if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                                    "directory"
+                                } else {
+                                    "file"
+                                };
                             result.push(format!("{} ({})", name, file_type));
                             count += 1;
                         }
                         Err(e) => result.push(format!("Error reading entry: {}", e)),
                     }
                 }
-                Ok(result.join("\n"))
+                let final_result = result.join("\n");
+                println!(
+                    "📋 Directory listing result ({} entries): {}",
+                    result.len(),
+                    final_result
+                );
+                Ok(final_result)
             }
-            Err(e) => Err(anyhow::anyhow!("Failed to read directory '{}': {}", safe_path.display(), e)),
+            Err(e) => {
+                println!("❌ Failed to read directory: {}", e);
+                Err(anyhow::anyhow!(
+                    "Failed to read directory '{}': {}",
+                    safe_path.display(),
+                    e
+                ))
+            }
         }
     }
 }
