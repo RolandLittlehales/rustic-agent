@@ -341,6 +341,163 @@ await window.__TAURI__.core.invoke('stop_file_watching');
 - `Ctrl+T` - Test whitelist functionality  
 - `Ctrl+D` - Debug app state
 
+## GitHub Issues & Project Management
+
+### Issue Creation Process
+
+When creating GitHub issues for this project, follow this standardized format:
+
+**Title Format:** `[Order] Category: Brief Description`
+- Example: `[1.1] Foundation: Implement ContentBlock enum system`
+
+**Required Sections:**
+1. **Overview** - What needs to be implemented and why
+2. **Technical Requirements** - Specific implementation details
+3. **Acceptance Criteria** - Definition of done
+4. **Quality Control** - Testing requirements (unit tests, integration tests, manual testing)
+5. **Documentation Requirements** - What formal documentation needs to be created/updated
+6. **Dependencies** - Other issues that must be completed first
+7. **Estimated Scope** - Target 500-1000 lines of code per issue
+
+**Labels to Use:**
+- `phase-1`, `phase-2`, `phase-3` - Development phases
+- `foundation`, `core-features`, `advanced-tools` - Feature categories
+- `breaking-change` - Issues that modify existing APIs
+- `documentation` - Issues requiring formal docs updates
+
+### Documentation Standards
+
+All new features must include formal documentation in the `docs/` directory:
+
+**Required Documentation:**
+- **Architecture docs** - How the feature fits into the overall system
+- **API documentation** - For any new types, traits, or functions
+- **Integration guides** - How to use the feature
+- **Reference links** - Internal cross-references and external resources
+
+**Documentation Format:**
+- Use Markdown with clear headings
+- Include code examples with proper syntax highlighting
+- Add cross-references to related documentation
+- Link to relevant external resources (Anthropic docs, Tauri docs, etc.)
+
+**When to Update Documentation:**
+- Creating new modules or major functionality
+- Modifying existing APIs or behavior
+- Adding configuration options
+- Implementing new tools or integrations
+
+**Documentation Review:**
+- All documentation must be reviewed as part of the issue acceptance criteria
+- Documentation should be updated in the same PR as the implementation
+- Cross-references should be validated and working
+
+### Quality Control Standards
+
+**Automated Testing Requirements:**
+- Unit tests for all new functions and methods
+- Integration tests for tool execution and API interactions
+- Property-based tests for complex data transformations
+- Performance tests for critical paths
+
+**Manual Testing Requirements:**
+- End-to-end user workflows
+- Error handling and edge cases
+- Cross-platform compatibility (Windows, macOS, Linux)
+- Security validation (whitelist enforcement, API key handling)
+
+**Code Quality Checks:**
+- `cargo fmt` - Code formatting
+- `cargo clippy` - Linting and best practices
+- `cargo test` - All tests must pass
+- `cargo build && npm run build` - Compilation must succeed
+- No new compiler warnings
+
+## Ticket Implementation Workflow
+
+When working on a new feature or issue, follow this systematic approach:
+
+### 1. Ticket Selection & Assignment
+
+**Initial Steps:**
+1. **Check implementation-sequence.md** - Understand the overall ticket ordering and progression
+2. **Review GitHub issues** - Find the first ticket without dependencies
+3. **Notify user** - Communicate which ticket you plan to work on and wait for confirmation
+4. **Assign yourself** - Once confirmed, assign the ticket to yourself on GitHub
+
+### 2. Pre-Implementation Analysis
+
+**Understanding the Task:**
+- **Read thoroughly** - Read the ticket multiple times to fully understand requirements
+- **Examine from multiple angles** - Consider edge cases, security implications, and integration points
+- **Verify understanding** - Ensure you comprehend both the what and the why of the ticket
+- **Review related code** - Understand existing patterns and conventions that apply
+
+### 3. Implementation Process
+
+**Development Principles:**
+- **Robustness** - Build resilient code that handles errors gracefully
+- **Correctness** - Ensure the implementation precisely matches requirements
+- **Security** - Follow security best practices, especially for file operations
+- **Maintainability** - Write clear, well-structured code that others can understand
+
+**Development Practices:**
+- **Incremental testing** - Run `cargo build && npm run build` periodically
+- **Quality checks** - Run `cargo fmt && cargo clippy` regularly
+- **Functional verification** - Test the actual functionality as you build
+- **Documentation** - Update docs as you implement, not as an afterthought
+
+### 4. Code Review Process
+
+**Self-Review via Sub-Agent:**
+1. **Launch sub-agent** - Start a critical code review sub-agent
+2. **Critical analysis** - Have the sub-agent examine code for:
+   - Security vulnerabilities
+   - Performance issues
+   - Code clarity and maintainability
+   - Adherence to project patterns
+   - Test coverage adequacy
+3. **Address feedback** - Fix all issues identified by the sub-agent
+4. **Re-review if needed** - For significant changes, run another review cycle
+
+### 5. Pull Request Creation
+
+**PR Requirements:**
+- **Link to issue** - Include "Fixes #[issue-number]" in the PR body
+- **Clear summary** - Provide a concise summary of what the issue was
+- **Implementation TLDR** - Brief explanation of how you addressed the issue
+- **Detailed body** - Include:
+  - Key implementation decisions
+  - Any trade-offs made
+  - Breaking changes (if any)
+  - Performance considerations
+
+**Testing Instructions:**
+- **Determine testing needs** - Not all PRs require manual testing:
+  - ✅ Manual testing needed: New features, UI changes, integrations
+  - ❌ Manual testing optional: Pure refactors, type refinements, documentation
+- **Clear test steps** - If manual testing is needed, provide step-by-step instructions
+- **Expected outcomes** - Describe what the tester should see/experience
+- **Edge cases** - Note any specific scenarios that should be tested
+
+## Formal Documentation Structure
+
+The `docs/` directory contains comprehensive technical documentation:
+
+- `docs/architecture/` - System design and architectural decisions
+- `docs/api/` - API reference documentation
+- `docs/tools/` - Tool system documentation
+- `docs/configuration/` - Configuration guides and references
+- `docs/security/` - Security implementation details
+- `docs/development/` - Development guides and workflows
+- `docs/integration/` - Third-party integration guides
+
+**Cross-Reference Guidelines:**
+- Always link to relevant sections in other docs
+- Include links to external resources (Anthropic API docs, Tauri guides, etc.)
+- Keep an updated index of all documentation
+- Use consistent linking patterns for maintainability
+
 ## Project Status Summary
 
 - **Framework**: Tauri v2 (NOT v1)
@@ -350,3 +507,4 @@ await window.__TAURI__.core.invoke('stop_file_watching');
 - **State**: Thread-safe with proper async patterns
 - **Logging**: Essential startup info + errors only, verbose logging cleaned
 - **Testing**: Comprehensive validation scripts available
+- **Documentation**: Formal docs in `docs/` directory with cross-references
