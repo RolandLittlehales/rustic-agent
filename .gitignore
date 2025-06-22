@@ -83,3 +83,6 @@ config.local.json
 *.bak
 *.backup
 *~
+
+#temp-docs
+/temp-docs
