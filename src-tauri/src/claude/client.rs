@@ -1,10 +1,11 @@
 use crate::claude::{
+    error::{ClaudeError, ClaudeResult, ErrorContext, ErrorHandler},
+    message_processor::MessageProcessor,
     tools::{AgentTool, ToolRegistry},
     types::*,
     whitelist::WhitelistConfig,
     ClaudeConfig, Conversation,
 };
-use anyhow::{Context, Result};
 use reqwest::Client;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -15,21 +16,21 @@ pub struct ClaudeClient {
     config: ClaudeConfig,
     http_client: Client,
     tool_registry: ToolRegistry,
+    message_processor: MessageProcessor,
+    error_handler: ErrorHandler,
     last_request: Mutex<Option<Instant>>,
 }
 
 impl ClaudeClient {
-    pub fn new(config: ClaudeConfig) -> Result<Self> {
-        // Basic API key validation (just check it's not empty)
-        if config.api_key.is_empty() {
-            return Err(anyhow::anyhow!("API key cannot be empty"));
-        }
+    pub fn new(config: ClaudeConfig) -> ClaudeResult<Self> {
+        // Validate configuration
+        config.validate()?;
 
         let http_client = Client::builder()
             .timeout(Duration::from_secs(120))
             .user_agent("LLMDevAgent/0.1.0")
             .build()
-            .context("Failed to create HTTP client")?;
+            .map_err(ClaudeError::HttpError)?;
 
         let mut tool_registry = ToolRegistry::new();
 
@@ -42,6 +43,8 @@ impl ClaudeClient {
             config,
             http_client,
             tool_registry,
+            message_processor: MessageProcessor::new(),
+            error_handler: ErrorHandler::new(),
             last_request: Mutex::new(None),
         })
     }
@@ -54,18 +57,28 @@ impl ClaudeClient {
     /// Set the whitelist configuration for all tools
     #[allow(dead_code)]
     pub fn set_whitelist(&mut self, whitelist: Arc<RwLock<WhitelistConfig>>) {
-        self.tool_registry.set_whitelist(whitelist);
+        self.tool_registry.set_whitelist(whitelist.clone());
+        self.message_processor.set_whitelist(whitelist);
     }
 
     pub async fn send_message(
         &self,
         conversation: &Conversation,
         message: String,
-    ) -> Result<String> {
+    ) -> ClaudeResult<String> {
+        // Process the user message using the message processor
+        let user_message = self.message_processor.process_user_message(&message)?;
+
         let mut messages = self.conversation_to_claude_messages(conversation);
-        messages.push(ClaudeMessage::user_text(message));
+        messages.push(user_message);
 
         let tools = self.tool_registry.get_all_tools();
+
+        let system_message = if self.config.supports_thinking() {
+            "You are a helpful AI assistant specialized in software development. You have access to various tools to help with file operations, code analysis, and development tasks. Feel free to use thinking mode to reason through complex problems."
+        } else {
+            "You are a helpful AI assistant specialized in software development. You have access to various tools to help with file operations, code analysis, and development tasks."
+        };
 
         let request = ClaudeRequest {
             model: self.config.model.clone(),
@@ -73,14 +86,19 @@ impl ClaudeClient {
             temperature: self.config.temperature,
             messages,
             tools: Some(tools),
-            system: Some("You are a helpful AI assistant specialized in software development. You have access to various tools to help with file operations, code analysis, and development tasks.".to_string()),
+            system: Some(system_message.to_string()),
         };
 
-        let response = self.make_api_call(request).await?;
+        // Use error handler for retry logic
+        let response = self
+            .error_handler
+            .handle_with_retry(|| self.make_api_call(request.clone()))
+            .await?;
+
         self.process_response(response).await
     }
 
-    async fn make_api_call(&self, request: ClaudeRequest) -> Result<ClaudeResponse> {
+    async fn make_api_call(&self, request: ClaudeRequest) -> ClaudeResult<ClaudeResponse> {
         // Rate limiting: ensure at least 1 second between requests
         let sleep_duration = {
             let last_request = self.last_request.lock().unwrap();
@@ -114,28 +132,28 @@ impl ClaudeClient {
             .header("content-type", "application/json")
             .json(&request)
             .send()
-            .await
-            .context("Failed to send request to Claude API")?;
+            .await?;
 
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!(
-                "Claude API request failed with status {}: {}",
-                status,
-                text
-            ));
+            return Err(ClaudeError::ApiError {
+                status: status.as_u16(),
+                message: text,
+                error_type: None,
+                param: None,
+                context: Some(
+                    ErrorContext::new("claude_api_call").add_metadata("model", &self.config.model),
+                ),
+            });
         }
 
-        let claude_response: ClaudeResponse = response
-            .json()
-            .await
-            .context("Failed to parse Claude API response")?;
+        let claude_response: ClaudeResponse = response.json().await?;
 
         Ok(claude_response)
     }
 
-    async fn process_response(&self, response: ClaudeResponse) -> Result<String> {
+    async fn process_response(&self, response: ClaudeResponse) -> ClaudeResult<String> {
         let mut result_parts = Vec::new();
 
         for content_block in &response.content {
@@ -144,17 +162,32 @@ impl ClaudeClient {
                     result_parts.push(text.clone());
                 }
                 ContentBlock::ToolUse { id: _, name, input } => {
+                    // Validate tool use first
+                    if let Err(e) = self
+                        .message_processor
+                        .validate_tool_use(content_block)
+                        .await
+                    {
+                        result_parts.push(format!("Tool '{}' validation error: {}", name, e));
+                        continue;
+                    }
+
                     match self.tool_registry.execute_tool(name, input.clone()).await {
                         Ok(tool_result) => {
                             result_parts.push(format!("Tool '{}' result: {}", name, tool_result));
                         }
                         Err(e) => {
-                            result_parts.push(format!("Tool '{}' error: {}", name, e));
+                            let error_msg = format!("Tool '{}' error: {}", name, e);
+                            result_parts.push(error_msg);
                         }
                     }
                 }
                 ContentBlock::ToolResult { .. } => {
                     // Tool results in response shouldn't happen, but handle gracefully
+                }
+                ContentBlock::Thinking { content } => {
+                    // Thinking blocks can be processed or ignored based on configuration
+                    result_parts.push(format!("Thinking: {}", content));
                 }
             }
         }
@@ -166,10 +199,10 @@ impl ClaudeClient {
         conversation
             .messages
             .iter()
-            .map(|msg| match msg.role.as_str() {
-                "user" => ClaudeMessage::user_text(msg.content.clone()),
-                "assistant" => ClaudeMessage::assistant_text(msg.content.clone()),
-                _ => ClaudeMessage::user_text(msg.content.clone()),
+            .map(|msg| ClaudeMessage {
+                role: msg.role.clone(),
+                content: msg.content.clone(),
+                thinking: msg.thinking.clone(),
             })
             .collect()
     }
@@ -178,7 +211,7 @@ impl ClaudeClient {
         &self,
         conversation: &mut Conversation,
         user_message: String,
-    ) -> Result<String> {
+    ) -> ClaudeResult<String> {
         conversation.add_user_message(user_message.clone());
 
         let response = self.send_message(conversation, user_message).await?;

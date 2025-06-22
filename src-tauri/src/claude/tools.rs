@@ -115,10 +115,32 @@ impl AgentTool for ReadFileTool {
     }
 
     async fn execute(&self, input: Value) -> Result<String> {
+        // Enhanced input validation
         let path_str = input
             .get("path")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing or invalid 'path' parameter"))?;
+
+        // Path validation
+        if path_str.is_empty() {
+            return Err(anyhow::anyhow!("Path parameter cannot be empty"));
+        }
+
+        if path_str.len() > 4096 {
+            return Err(anyhow::anyhow!(
+                "Path parameter too long (max 4096 characters)"
+            ));
+        }
+
+        // Prevent path traversal attempts
+        if path_str.contains("..") || path_str.contains('\0') {
+            return Err(anyhow::anyhow!("Invalid path: contains illegal characters"));
+        }
+
+        // Prevent path traversal attempts
+        if path_str.contains("..") || path_str.contains('\0') {
+            return Err(anyhow::anyhow!("Invalid path: contains illegal characters"));
+        }
 
         // Validate and sanitize the path using whitelist
         let safe_path = if let Some(whitelist) = &self.whitelist {
@@ -147,8 +169,25 @@ impl AgentTool for ReadFileTool {
             canonical_path
         };
 
-        match std::fs::read_to_string(&safe_path) {
-            Ok(content) => Ok(content),
+        // Input validation
+        if safe_path.to_string_lossy().len() > 4096 {
+            return Err(anyhow::anyhow!("File path too long (max 4096 characters)"));
+        }
+
+        // Use async file operations
+        match tokio::fs::read_to_string(&safe_path).await {
+            Ok(content) => {
+                // Validate file size
+                const MAX_FILE_SIZE: usize = 10 * 1024 * 1024; // 10MB limit for reading
+                if content.len() > MAX_FILE_SIZE {
+                    return Err(anyhow::anyhow!(
+                        "File too large: {} bytes (limit: {} bytes)",
+                        content.len(),
+                        MAX_FILE_SIZE
+                    ));
+                }
+                Ok(content)
+            }
             Err(e) => Err(anyhow::anyhow!(
                 "Failed to read file '{}': {}",
                 safe_path.display(),
@@ -211,6 +250,7 @@ impl AgentTool for WriteFileTool {
     }
 
     async fn execute(&self, input: Value) -> Result<String> {
+        // Enhanced input validation
         let path_str = input
             .get("path")
             .and_then(|v| v.as_str())
@@ -220,6 +260,30 @@ impl AgentTool for WriteFileTool {
             .get("content")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing or invalid 'content' parameter"))?;
+
+        // Path validation
+        if path_str.is_empty() {
+            return Err(anyhow::anyhow!("Path parameter cannot be empty"));
+        }
+
+        if path_str.len() > 4096 {
+            return Err(anyhow::anyhow!(
+                "Path parameter too long (max 4096 characters)"
+            ));
+        }
+
+        // Prevent path traversal attempts
+        if path_str.contains("..") || path_str.contains('\0') {
+            return Err(anyhow::anyhow!("Invalid path: contains illegal characters"));
+        }
+
+        // Content validation
+        if content.len() > 50 * 1024 * 1024 {
+            return Err(anyhow::anyhow!(
+                "Content too large: {} bytes (limit: 50MB)",
+                content.len()
+            ));
+        }
 
         // Validate and sanitize the path using whitelist
         let safe_path = if let Some(whitelist) = &self.whitelist {
@@ -248,16 +312,6 @@ impl AgentTool for WriteFileTool {
             canonical_path
         };
 
-        // Content size validation
-        const MAX_CONTENT_SIZE: usize = 50 * 1024 * 1024; // 50MB limit
-        if content.len() > MAX_CONTENT_SIZE {
-            return Err(anyhow::anyhow!(
-                "Content too large: {} bytes (limit: {} bytes)",
-                content.len(),
-                MAX_CONTENT_SIZE
-            ));
-        }
-
         // Check if we're trying to overwrite important files
         let file_name = safe_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
@@ -278,7 +332,8 @@ impl AgentTool for WriteFileTool {
             ));
         }
 
-        match std::fs::write(&safe_path, content) {
+        // Use async file operations
+        match tokio::fs::write(&safe_path, content).await {
             Ok(_) => Ok(format!(
                 "Successfully wrote {} bytes to '{}'",
                 content.len(),
@@ -338,31 +393,28 @@ impl AgentTool for ListDirectoryTool {
     }
 
     async fn execute(&self, input: Value) -> Result<String> {
-        println!("🔧 ListDirectoryTool::execute called");
-        println!("📥 Input: {:?}", input);
-
+        // Input validation and sanitization
         let path_str = input
             .get("path")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing or invalid 'path' parameter"))?;
 
-        println!("📁 Path to list: '{}'", path_str);
+        // Additional path validation
+        if path_str.is_empty() {
+            return Err(anyhow::anyhow!("Path parameter cannot be empty"));
+        }
+
+        if path_str.len() > 4096 {
+            return Err(anyhow::anyhow!(
+                "Path parameter too long (max 4096 characters)"
+            ));
+        }
 
         // Validate and sanitize the path using whitelist
         let safe_path = if let Some(whitelist) = &self.whitelist {
-            println!("🔒 Using whitelist validation");
             let whitelist_guard = whitelist.read().await;
-            println!("🔓 Acquired whitelist read lock");
-
-            match validate_path(path_str, &whitelist_guard, FileOperation::List) {
-                Ok(path) => path,
-                Err(e) => {
-                    println!("❌ Path validation failed: {}", e);
-                    return Err(e);
-                }
-            }
+            validate_path(path_str, &whitelist_guard, FileOperation::List)?
         } else {
-            println!("⚠️ No whitelist set, using fallback validation");
             // Fallback to basic validation if no whitelist is set
             let current_dir = std::env::current_dir()
                 .map_err(|e| anyhow::anyhow!("Cannot determine current directory: {}", e))?;
@@ -385,14 +437,14 @@ impl AgentTool for ListDirectoryTool {
             canonical_path
         };
 
-        println!("📂 Attempting to read directory: {}", safe_path.display());
-        match std::fs::read_dir(&safe_path) {
-            Ok(entries) => {
+        // Use async file operations
+        match tokio::fs::read_dir(&safe_path).await {
+            Ok(mut entries) => {
                 let mut result = Vec::new();
                 let mut count = 0;
                 const MAX_ENTRIES: usize = 1000; // Limit directory listing
 
-                for entry in entries {
+                while let Some(entry) = entries.next_entry().await.transpose() {
                     if count >= MAX_ENTRIES {
                         result.push(format!(
                             "... (truncated, showing first {} entries)",
@@ -410,34 +462,24 @@ impl AgentTool for ListDirectoryTool {
                                 continue;
                             }
 
-                            let file_type =
-                                if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-                                    "directory"
-                                } else {
-                                    "file"
-                                };
+                            let file_type = match entry.file_type().await {
+                                Ok(ft) if ft.is_dir() => "directory",
+                                Ok(_) => "file",
+                                Err(_) => "unknown",
+                            };
                             result.push(format!("{} ({})", name, file_type));
                             count += 1;
                         }
                         Err(e) => result.push(format!("Error reading entry: {}", e)),
                     }
                 }
-                let final_result = result.join("\n");
-                println!(
-                    "📋 Directory listing result ({} entries): {}",
-                    result.len(),
-                    final_result
-                );
-                Ok(final_result)
+                Ok(result.join("\n"))
             }
-            Err(e) => {
-                println!("❌ Failed to read directory: {}", e);
-                Err(anyhow::anyhow!(
-                    "Failed to read directory '{}': {}",
-                    safe_path.display(),
-                    e
-                ))
-            }
+            Err(e) => Err(anyhow::anyhow!(
+                "Failed to read directory '{}': {}",
+                safe_path.display(),
+                e
+            )),
         }
     }
 }
