@@ -66,6 +66,11 @@ This is a **Tauri v2-based desktop application** that provides a chat interface 
 
 **Backend (Rust)**:
 - `src-tauri/src/main.rs` - Tauri v2 app entry point with command handlers
+- `src-tauri/src/config/` - **NEW: Unified Configuration System**
+  - `mod.rs` - Master configuration with environment loading
+  - `constants.rs` - Compile-time constants (API endpoints, models, limits)
+  - `runtime.rs` - Runtime-configurable settings (timeouts, feature flags)
+  - `validation.rs` - Validation limits with type-safe helpers
 - `src-tauri/src/claude/` - Claude API integration module
   - `client.rs` - HTTP client for Claude API with tool execution
   - `tools.rs` - Async trait-based tool system with whitelist validation
@@ -78,6 +83,7 @@ This is a **Tauri v2-based desktop application** that provides a chat interface 
 **Frontend (Vanilla JS)**:
 - `ui/index.html` - Main application interface
 - `ui/js/app.js` - Chat UI, file explorer, and Tauri v2 command bindings
+- `ui/js/config.js` - **NEW: Frontend configuration constants**
 - `ui/css/styles.css` - Modern styling
 
 **Key Architecture Patterns**:
@@ -86,6 +92,7 @@ This is a **Tauri v2-based desktop application** that provides a chat interface 
 - **Tauri v2 communication**: Named parameter objects for all commands
 - **Security-first design**: Whitelist-based file access with path validation
 - **Real-time updates**: File watcher with debounced UI updates
+- **Unified Configuration**: Centralized constants, runtime config, and validation limits
 
 ### Tool System
 
@@ -103,6 +110,7 @@ Current `AppState` structure:
 struct AppState {
     conversation: Arc<Mutex<Conversation>>,
     config: Arc<Mutex<ClaudeConfig>>,
+    app_config: Arc<AppConfig>,                    // NEW: Unified configuration
     whitelist: Arc<RwLock<WhitelistConfig>>,
     file_watcher: Arc<FileWatcherService>,
 }
@@ -119,10 +127,63 @@ struct AppState {
 
 ### API Integration
 
-- Uses `reqwest` for HTTP client with 120s timeout
+- Uses `reqwest` for HTTP client with configurable timeout (default 120s)
 - Converts internal conversation format to Claude API messages
 - Handles tool execution within Claude responses
-- Model: `claude-3-5-sonnet-20241022` (configurable)
+- Model: `claude-sonnet-4-20250514` (default, fully configurable)
+- **Configuration-driven**: All timeouts, limits, and models managed via unified config
+
+## Unified Configuration System
+
+**IMPORTANT**: A comprehensive configuration system has been implemented to eliminate hardcoded values and improve maintainability.
+
+### Configuration Architecture
+
+The system uses **3 strategic patterns**:
+
+1. **Compile-time Constants** (`src-tauri/src/config/constants.rs`):
+   - Values that never change at runtime (API endpoints, security patterns, model lists)
+   - Examples: `CLAUDE_API_BASE_URL`, `SUSPICIOUS_PATTERNS`, `PROTECTED_FILES`
+
+2. **Runtime Configuration** (`src-tauri/src/config/runtime.rs`):
+   - Deployment-configurable values via environment variables and config files
+   - Examples: timeouts, feature flags, model selection, API keys
+   - Loading hierarchy: Environment variables → Config files → Defaults
+
+3. **Validation Limits** (`src-tauri/src/config/validation.rs`):
+   - Security and resource limits with built-in validation
+   - Examples: message size limits, file size limits, path length limits
+   - Type-safe helpers for validation and formatting
+
+### Key Configuration Features
+
+**Environment Integration**:
+```rust
+let app_config = AppConfig::load()?; // Loads from multiple sources automatically
+```
+
+**Type-Safe Validation**:
+```rust
+// Before: scattered hardcoded limits
+if message.len() > 50000 { return Err(...); }
+
+// After: centralized configuration
+state.app_config.validation.validate_message_length(message.len())?;
+```
+
+**Frontend/Backend Consistency**:
+```javascript
+// Frontend mirrors backend configuration
+import { VALIDATION, CONFIG_HELPERS } from './config.js';
+const warningLevel = CONFIG_HELPERS.getMessageWarningLevel(length);
+```
+
+### Configuration Best Practices
+
+- **Single Source of Truth**: All limits and constants defined centrally
+- **Environment Flexibility**: Easy deployment configuration via environment variables
+- **Type Safety**: Compile-time validation prevents configuration errors
+- **Maintainability**: Changes to limits require updates in only one location
 
 ## Security & API Key Handling
 
@@ -206,30 +267,68 @@ async fn list_directory(path: String, state: tauri::State<'_, AppState>) -> Resu
 6. **Development Experience**: Clear error messages and improved dev workflow
 7. **File Explorer Functionality**: Fixed missing file explorer by adding `list_directory` Tauri command
 8. **Frontend Security**: Removed dead code and potential API key exposure paths
+9. **Unified Configuration System**: Eliminated hardcoded values with centralized config management
+10. **Intelligent Security Design**: Layered validation that doesn't break legitimate functionality
 
 ## Development Process Learnings
 
-### Critical Mistakes to Avoid
+### Core Development Principles for Quality Code
 
-**1. Parameter Format Errors (Tauri v2)**:
-- ❌ Using string parameters directly: `invoke('cmd', 'value')`
-- ✅ Using object parameters: `invoke('cmd', { param: 'value' })`
-- **Impact**: Complete function failure, cryptic error messages
+**1. Configuration-First Development**:
+- ❌ **Anti-pattern**: Hardcoding limits, timeouts, and magic numbers throughout code
+  ```rust
+  if message.len() > 50000 { return Err("Too long".into()); }
+  if path_str.contains("..") { return Err("Invalid".into()); }
+  ```
+- ✅ **Best practice**: Define configuration once, use everywhere
+  ```rust
+  app_config.validation.validate_message_length(message.len())?;
+  // Let whitelist system handle path validation intelligently
+  ```
+- **Principle**: Single source of truth prevents inconsistencies and enables deployment flexibility
 
-**2. Missing Function Definitions**:
-- ❌ Calling functions that aren't defined (e.g., `setupTextareaAutoResize`)
-- ✅ Always verify function exists before calling
-- **Impact**: Runtime TypeError, app crash
+**2. Layered Security Validation**:
+- ❌ **Anti-pattern**: Overly restrictive early validation that breaks legitimate use cases
+- ✅ **Best practice**: Let specialized security systems handle complex validation
+  ```rust
+  // Don't block all paths with ".." - let whitelist canonicalize and validate
+  validate_path(path_str, &whitelist_guard, FileOperation::Read)?
+  ```
+- **Principle**: Security should be intelligent, not blunt - enable legitimate use while preventing abuse
 
-**3. Ignoring Compilation Errors**:
-- ❌ Making changes without running `cargo build`
-- ✅ Build and test after every significant change
-- **Impact**: Broken functionality, wasted time
+**3. Type-Safe Configuration**:
+- ❌ **Anti-pattern**: Runtime string comparisons and manual validation
+- ✅ **Best practice**: Compile-time constants with type-safe runtime validation
+  ```rust
+  // Constants defined once, validation built-in
+  pub const SUSPICIOUS_PATTERNS: &[&str] = &["<script", "javascript:"];
+  state.app_config.validation.validate_message_length(len)?; // Type-safe with helpful errors
+  ```
+- **Principle**: Let the type system prevent configuration errors
 
-**4. Excessive Debug Logging**:
-- ❌ Leaving verbose console.log statements in production
-- ✅ Clean up debug logs, keep essential startup info and errors
-- **Impact**: Poor user experience, console spam
+**4. Consistent Frontend/Backend Patterns**:
+- ❌ **Anti-pattern**: Different configuration approaches in frontend vs backend
+- ✅ **Best practice**: Mirror configuration patterns across layers
+  ```javascript
+  // Frontend mirrors backend structure
+  import { VALIDATION, CONFIG_HELPERS } from './config.js';
+  const warningLevel = CONFIG_HELPERS.getMessageWarningLevel(length);
+  ```
+- **Principle**: Consistency reduces cognitive load and prevents synchronization bugs
+
+**5. Tauri v2 Parameter Discipline**:
+- ❌ **Anti-pattern**: Mixing parameter styles, assuming Tauri v1 patterns work
+- ✅ **Best practice**: Always use object parameters, verify signatures
+  ```javascript
+  // Always use object parameters in Tauri v2
+  await window.__TAURI__.core.invoke('send_message', { message: text });
+  ```
+- **Principle**: Framework conventions exist for a reason - follow them consistently
+
+**6. Build-Driven Development**:
+- ❌ **Anti-pattern**: Making multiple changes before testing compilation
+- ✅ **Best practice**: Build early, build often, fix issues immediately
+- **Principle**: Fast feedback loops prevent compound errors and save debugging time
 
 ### Proven Development Process
 
@@ -283,6 +382,14 @@ cargo fmt && cargo clippy     # Keep code clean
 - Path validation prevents directory traversal
 - Whitelist system provides runtime-configurable access control
 - API keys never exposed in frontend code
+- **Path traversal**: Avoid overly restrictive validation - let whitelist system canonicalize and validate paths properly
+
+**5. Configuration Management**:
+- Use unified configuration system to eliminate hardcoded values
+- Frontend and backend configurations must stay synchronized
+- Environment variables take precedence over config files over defaults
+- Type-safe validation prevents configuration errors
+- **Pattern**: Three-tier config architecture (constants, runtime, validation)
 
 ### Quality Assurance Checklist
 
@@ -298,6 +405,9 @@ Before considering any change complete:
 - [ ] Essential logging preserved, verbose logging removed
 - [ ] Whitelist functionality works (Ctrl+T test)
 - [ ] File watching works without console spam
+- [ ] Configuration system used instead of hardcoded values
+- [ ] Frontend and backend configuration constants synchronized
+- [ ] Path traversal handled by whitelist system, not rejected outright
 
 ## Available Tauri Commands
 
@@ -392,6 +502,30 @@ All new features must include formal documentation in the `docs/` directory:
 - Documentation should be updated in the same PR as the implementation
 - Cross-references should be validated and working
 
+**Documentation Examples from ContentBlock Implementation:**
+1. **Architecture Documentation** (`docs/architecture/content-block-system.md`):
+   - System overview with design principles
+   - Component descriptions and data flow
+   - Security considerations
+   - Future extensibility plans
+
+2. **API Reference** (`docs/api/content-block-types.md`):
+   - Complete type definitions with all fields
+   - Method signatures and traits
+   - Usage examples and serialization
+   - Validation rules
+
+3. **Integration Guide** (`docs/tools/content-block-integration.md`):
+   - Step-by-step implementation guide
+   - Best practices and common patterns
+   - Testing strategies
+   - Performance considerations
+
+4. **Index Updates** (`docs/architecture/README.md`):
+   - Central hub linking all related docs
+   - Architecture decision records
+   - System diagrams and overviews
+
 ### Quality Control Standards
 
 **Automated Testing Requirements:**
@@ -433,7 +567,22 @@ When working on a new feature or issue, follow this systematic approach:
 - **Verify understanding** - Ensure you comprehend both the what and the why of the ticket
 - **Review related code** - Understand existing patterns and conventions that apply
 
-### 3. Implementation Process
+### 3. Documentation Planning
+
+**Before Implementation, Plan Documentation:**
+- **Architecture Documentation** - Determine if this feature needs architecture docs
+- **API Documentation** - List all new types, traits, and functions that need docs
+- **Integration Guides** - Identify if users/developers need guidance on using the feature
+- **Cross-References** - Note which existing docs need updates
+
+**Documentation Requirements by Feature Type:**
+- **New Systems** (like ContentBlock): Full architecture doc + API reference + integration guide
+- **New Tools**: Tool integration guide + API reference for the tool trait
+- **Configuration Changes**: Update configuration guides + migration notes
+- **API Changes**: Update API reference + migration guide if breaking
+- **Bug Fixes**: Usually just update relevant docs if behavior changes
+
+### 4. Implementation Process
 
 **Development Principles:**
 - **Robustness** - Build resilient code that handles errors gracefully
@@ -442,12 +591,38 @@ When working on a new feature or issue, follow this systematic approach:
 - **Maintainability** - Write clear, well-structured code that others can understand
 
 **Development Practices:**
+- **Create documentation structure first** - Set up doc files before coding
 - **Incremental testing** - Run `cargo build && npm run build` periodically
 - **Quality checks** - Run `cargo fmt && cargo clippy` regularly
 - **Functional verification** - Test the actual functionality as you build
 - **Documentation** - Update docs as you implement, not as an afterthought
+- **Cross-references** - Add links between related docs as you write
 
-### 4. Code Review Process
+### 5. Documentation Creation
+
+**Documentation Process:**
+1. **Create planned documentation files** - Based on your planning phase
+2. **Write comprehensive content** - Include:
+   - Overview and purpose
+   - Technical details
+   - Code examples
+   - Integration instructions
+   - Security considerations
+   - Performance notes
+3. **Add cross-references** - Link to:
+   - Related internal documentation
+   - External resources (Anthropic docs, Tauri docs)
+   - GitHub issues and PRs
+4. **Update existing docs** - Ensure all references to changed functionality are current
+
+**Documentation Quality Standards:**
+- **Clear structure** - Use consistent headings and organization
+- **Code examples** - Provide working examples with syntax highlighting
+- **Completeness** - Cover all aspects of the feature
+- **Accuracy** - Ensure docs match actual implementation
+- **Accessibility** - Write for both beginners and advanced users
+
+### 6. Code Review Process
 
 **Self-Review via Sub-Agent:**
 1. **Launch sub-agent** - Start a critical code review sub-agent
@@ -457,20 +632,23 @@ When working on a new feature or issue, follow this systematic approach:
    - Code clarity and maintainability
    - Adherence to project patterns
    - Test coverage adequacy
+   - **Documentation completeness and accuracy**
 3. **Address feedback** - Fix all issues identified by the sub-agent
 4. **Re-review if needed** - For significant changes, run another review cycle
 
-### 5. Pull Request Creation
+### 7. Pull Request Creation
 
 **PR Requirements:**
 - **Link to issue** - Include "Fixes #[issue-number]" in the PR body
 - **Clear summary** - Provide a concise summary of what the issue was
 - **Implementation TLDR** - Brief explanation of how you addressed the issue
+- **Documentation summary** - List all documentation created/updated
 - **Detailed body** - Include:
   - Key implementation decisions
   - Any trade-offs made
   - Breaking changes (if any)
   - Performance considerations
+  - Links to new documentation
 
 **Testing Instructions:**
 - **Determine testing needs** - Not all PRs require manual testing:
@@ -479,6 +657,14 @@ When working on a new feature or issue, follow this systematic approach:
 - **Clear test steps** - If manual testing is needed, provide step-by-step instructions
 - **Expected outcomes** - Describe what the tester should see/experience
 - **Edge cases** - Note any specific scenarios that should be tested
+
+### 8. Post-PR Documentation Review
+
+**After PR Approval:**
+- **Verify all docs are linked** - Ensure documentation is discoverable
+- **Check cross-references** - Verify all links work correctly
+- **Update indexes** - Add new docs to relevant index files
+- **Notify of docs** - Mention new documentation in release notes
 
 ## Formal Documentation Structure
 
@@ -501,10 +687,226 @@ The `docs/` directory contains comprehensive technical documentation:
 ## Project Status Summary
 
 - **Framework**: Tauri v2 (NOT v1)
-- **Security**: Whitelist-based file access with runtime configuration
-- **File System**: Real-time monitoring with debounced updates
-- **API Integration**: Claude 3.5 Sonnet with tool execution
+- **Configuration**: Unified three-tier system (constants, runtime, validation)
+- **Security**: Intelligent layered validation with whitelist-based file access
+- **File System**: Real-time monitoring with debounced updates  
+- **API Integration**: Claude 4 Sonnet with configurable tool execution
 - **State**: Thread-safe with proper async patterns
-- **Logging**: Essential startup info + errors only, verbose logging cleaned
+- **Architecture**: Configuration-first development with type safety
+- **Validation**: Centralized limits with helpful error messages
 - **Testing**: Comprehensive validation scripts available
 - **Documentation**: Formal docs in `docs/` directory with cross-references
+
+## Core Architecture Principles
+
+1. **Configuration-First**: No hardcoded values, centralized configuration management
+2. **Type Safety**: Let the compiler prevent configuration and validation errors
+3. **Layered Security**: Intelligent validation that enables legitimate use cases
+4. **Consistency**: Mirror patterns between frontend and backend
+5. **Framework Discipline**: Follow Tauri v2 conventions strictly
+6. **Fast Feedback**: Build early and often to catch issues immediately
+
+## Rust-Specific Development Standards
+
+### 1. Embrace Rust's Strengths
+
+**Ownership and Borrowing**:
+```rust
+// ✅ Good: Use borrowing to avoid unnecessary cloning
+pub fn validate_message(message: &str, config: &ValidationLimits) -> Result<()> {
+    config.validate_message_length(message.len())
+}
+
+// ❌ Avoid: Unnecessary cloning
+pub fn validate_message(message: String, config: ValidationLimits) -> Result<()> { ... }
+```
+
+**Idiomatic Constructs**:
+```rust
+// ✅ Good: Use pattern matching and enums
+match app_config.validation.message_warning_level(length) {
+    MessageWarningLevel::Ok => "text-gray-500",
+    MessageWarningLevel::Warning => "text-warning-500", 
+    MessageWarningLevel::Danger => "text-error-500",
+}
+
+// ✅ Good: Use traits for shared behavior
+#[async_trait]
+pub trait AgentTool: Send + Sync + std::fmt::Debug {
+    fn name(&self) -> &str;
+    async fn execute(&self, input: Value) -> Result<String>;
+}
+```
+
+**Error Handling**:
+```rust
+// ✅ Good: Use ? operator for error propagation
+pub fn load_config() -> Result<AppConfig> {
+    let mut config = AppConfig::default();
+    config.runtime.load_from_env()?;
+    config.validate()?;
+    Ok(config)
+}
+
+// ❌ Avoid: .unwrap() without proper checks
+let config = load_config().unwrap(); // Can panic!
+```
+
+### 2. Write Small, Focused Functions and Modules
+
+**Single Responsibility**:
+```rust
+// ✅ Good: Each function has one clear purpose
+impl ValidationLimits {
+    pub fn validate_message_length(&self, length: usize) -> Result<()> { ... }
+    pub fn validate_file_size(&self, size: u64) -> Result<()> { ... }
+    pub fn validate_path_length(&self, path: &str) -> Result<()> { ... }
+}
+```
+
+**Modularity**:
+```
+src/config/
+├── mod.rs          # Master configuration coordination
+├── constants.rs    # Compile-time constants (< 200 lines)
+├── runtime.rs      # Runtime configuration (< 300 lines)
+└── validation.rs   # Validation limits (< 300 lines)
+```
+
+### 3. Maintain Clarity and Readability
+
+**Descriptive Names**:
+```rust
+// ✅ Good: Clear, descriptive names
+pub const CLAUDE_API_MESSAGES_ENDPOINT: &str = "/messages";
+pub fn validate_message_length(&self, length: usize) -> Result<()>
+
+// ❌ Avoid: Abbreviated or unclear names
+pub const API_EP: &str = "/messages";
+pub fn val_msg_len(&self, len: usize) -> Result<()>
+```
+
+**Named Constants**:
+```rust
+// ✅ Good: Named constants instead of magic numbers
+pub mod defaults {
+    pub const MESSAGE_MAX_CHARS: usize = 50000; // 50KB for coding helper
+    pub const FILE_MAX_SIZE_BYTES: u64 = 10 * 1024 * 1024; // 10MB
+}
+
+// ❌ Avoid: Magic numbers scattered throughout code
+if message.len() > 50000 { ... }
+```
+
+### 4. Leverage Rust's Tooling
+
+**Development Workflow**:
+```bash
+# Essential commands for clean code
+cargo check          # Fast compilation check
+cargo clippy          # Linting and best practices
+cargo fmt            # Consistent formatting
+cargo test           # Run all tests
+
+# Quality gates before committing
+cargo clippy -- -D warnings    # Treat warnings as errors
+cargo test                      # All tests must pass
+```
+
+**Clippy Integration**:
+```rust
+// Follow Clippy suggestions for idiomatic Rust
+#[allow(dead_code)]  // Only when code is intentionally unused
+pub fn future_feature() { ... }
+
+// Prefer Clippy-suggested patterns
+if let Some(value) = optional_value {  // Instead of match
+    // Handle value
+}
+```
+
+### 5. Testing and Code Quality
+
+**Test Organization**:
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_validation() {
+        let config = AppConfig::default();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test] 
+    fn test_message_limits() {
+        let limits = ValidationLimits::default();
+        assert!(limits.validate_message_length(1000).is_ok());
+        assert!(limits.validate_message_length(100000).is_err());
+    }
+}
+```
+
+**Documentation Standards**:
+```rust
+/// Validate message length against configured limits
+/// 
+/// Returns `Ok(())` if the message is within limits, or an error
+/// with a descriptive message if validation fails.
+/// 
+/// # Arguments
+/// * `length` - The message length in characters
+/// 
+/// # Examples
+/// ```
+/// let limits = ValidationLimits::default();
+/// assert!(limits.validate_message_length(1000).is_ok());
+/// ```
+pub fn validate_message_length(&self, length: usize) -> Result<()> { ... }
+```
+
+### 6. Dependency Management
+
+**Cargo.toml Best Practices**:
+```toml
+[dependencies]
+# Group by purpose with comments
+# Tauri framework
+tauri = { version = "2.0", features = ["tray-icon", "devtools"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# Async runtime
+tokio = { version = "1.0", features = ["full"] }
+
+# HTTP client - specify features to avoid unused dependencies
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+```
+
+### 7. Performance and Memory Safety
+
+**Efficient String Handling**:
+```rust
+// ✅ Good: Use string slices when possible
+pub fn validate_path(path: &str, whitelist: &WhitelistConfig) -> Result<PathBuf>
+
+// ✅ Good: Use Cow for conditional cloning
+use std::borrow::Cow;
+pub fn normalize_path(path: &str) -> Cow<str> { ... }
+```
+
+**Resource Management**:
+```rust
+// ✅ Good: Use Arc for shared ownership, RwLock for concurrent access
+pub struct AppState {
+    config: Arc<Mutex<ClaudeConfig>>,
+    app_config: Arc<AppConfig>,           // Immutable shared data
+    whitelist: Arc<RwLock<WhitelistConfig>>,  // Concurrent read access
+}
+```
+
+These patterns ensure we write idiomatic, maintainable Rust code that leverages the language's strengths while following established best practices.

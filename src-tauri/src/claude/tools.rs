@@ -132,14 +132,9 @@ impl AgentTool for ReadFileTool {
             ));
         }
 
-        // Prevent path traversal attempts
-        if path_str.contains("..") || path_str.contains('\0') {
-            return Err(anyhow::anyhow!("Invalid path: contains illegal characters"));
-        }
-
-        // Prevent path traversal attempts
-        if path_str.contains("..") || path_str.contains('\0') {
-            return Err(anyhow::anyhow!("Invalid path: contains illegal characters"));
+        // Prevent null bytes in paths (security issue)
+        if path_str.contains('\0') {
+            return Err(anyhow::anyhow!("Invalid path: contains null bytes"));
         }
 
         // Validate and sanitize the path using whitelist
@@ -272,9 +267,9 @@ impl AgentTool for WriteFileTool {
             ));
         }
 
-        // Prevent path traversal attempts
-        if path_str.contains("..") || path_str.contains('\0') {
-            return Err(anyhow::anyhow!("Invalid path: contains illegal characters"));
+        // Prevent null bytes in paths (security issue)
+        if path_str.contains('\0') {
+            return Err(anyhow::anyhow!("Invalid path: contains null bytes"));
         }
 
         // Content validation

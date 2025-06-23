@@ -55,8 +55,8 @@ impl Default for ClaudeConfig {
     fn default() -> Self {
         Self {
             api_key: String::new(),
-            model: "claude-4-sonnet-20250522".to_string(), // Updated to Claude 4
-            max_tokens: 8192,                              // Increased for Claude 4
+            model: "claude-sonnet-4-20250514".to_string(),
+            max_tokens: 8192, // Increased for Claude 4
             temperature: 0.7,
         }
     }
@@ -99,8 +99,7 @@ impl ClaudeConfig {
     fn is_valid_model(&self) -> bool {
         matches!(
             self.model.as_str(),
-            "claude-4-opus-20250522"
-                | "claude-4-sonnet-20250522"
+            "claude-sonnet-4-20250514"
                 | "claude-3-5-sonnet-20241022"
                 | "claude-3-5-haiku-20241022"
                 | "claude-3-opus-20240229"
@@ -111,16 +110,7 @@ impl ClaudeConfig {
 
     pub fn get_model_info(&self) -> ModelInfo {
         match self.model.as_str() {
-            "claude-4-opus-20250522" => ModelInfo {
-                family: "claude-4".to_string(),
-                variant: "opus".to_string(),
-                max_tokens: 200000,
-                supports_thinking: true,
-                supports_tool_use: true,
-                cost_per_million_input: 15.0,
-                cost_per_million_output: 75.0,
-            },
-            "claude-4-sonnet-20250522" => ModelInfo {
+            "claude-sonnet-4-20250514" => ModelInfo {
                 family: "claude-4".to_string(),
                 variant: "sonnet".to_string(),
                 max_tokens: 200000,
@@ -180,7 +170,7 @@ impl ClaudeConfig {
 
     #[allow(dead_code)]
     pub fn is_claude_4(&self) -> bool {
-        self.model.starts_with("claude-4")
+        self.model.starts_with("claude-4") || self.model.contains("-4-")
     }
 
     pub fn supports_thinking(&self) -> bool {
@@ -450,7 +440,7 @@ mod tests {
     #[test]
     fn test_claude_config_default() {
         let config = ClaudeConfig::default();
-        assert_eq!(config.model, "claude-4-sonnet-20250522");
+        assert_eq!(config.model, "claude-sonnet-4-20250514");
         assert_eq!(config.max_tokens, 8192);
         assert_eq!(config.temperature, 0.7);
         assert!(config.is_claude_4());
@@ -474,7 +464,7 @@ mod tests {
         assert!(config.validate().is_err());
 
         // Test invalid temperature
-        config.model = "claude-4-sonnet-20250522".to_string();
+        config.model = "claude-sonnet-4-20250514".to_string();
         config.temperature = 1.5;
         assert!(config.validate().is_err());
 
