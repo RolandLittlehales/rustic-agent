@@ -11,6 +11,7 @@ pub mod constants;
 pub mod runtime;
 pub mod validation;
 
+#[allow(unused_imports)]
 pub use constants::*;
 pub use runtime::RuntimeConfig;
 pub use validation::ValidationLimits;
@@ -20,19 +21,10 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 /// Master configuration that combines all configuration sources
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     pub runtime: RuntimeConfig,
     pub validation: ValidationLimits,
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            runtime: RuntimeConfig::default(),
-            validation: ValidationLimits::default(),
-        }
-    }
 }
 
 impl AppConfig {
@@ -84,13 +76,16 @@ impl AppConfig {
     }
 
     /// Get timeout as Duration from milliseconds
+    #[allow(dead_code)]
     pub fn get_timeout(&self, timeout_ms: u64) -> Duration {
         Duration::from_millis(timeout_ms)
     }
 }
 
 /// Configuration builder for complex setups
+#[allow(dead_code)]
 pub struct AppConfigBuilder {
+    #[allow(dead_code)]
     config: AppConfig,
 }
 
@@ -101,21 +96,25 @@ impl AppConfigBuilder {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_api_key(mut self, api_key: String) -> Self {
         self.config.runtime.api_key = Some(api_key);
         self
     }
 
+    #[allow(dead_code)]
     pub fn with_message_limit(mut self, limit: usize) -> Self {
         self.config.validation.message_max_chars = limit;
         self
     }
 
+    #[allow(dead_code)]
     pub fn with_file_size_limit(mut self, limit: u64) -> Self {
         self.config.validation.file_max_size_bytes = limit;
         self
     }
 
+    #[allow(dead_code)]
     pub fn build(self) -> Result<AppConfig> {
         self.config.validate()?;
         Ok(self.config)

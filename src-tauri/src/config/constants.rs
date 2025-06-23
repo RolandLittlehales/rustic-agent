@@ -11,19 +11,26 @@ use std::time::Duration;
 // APPLICATION METADATA
 // ============================================================================
 
+#[allow(dead_code)]
 pub const APP_NAME: &str = "LLM Dev Agent";
+#[allow(dead_code)]
 pub const APP_VERSION: &str = "0.1.0";
+#[allow(dead_code)]
 pub const USER_AGENT: &str = "LLMDevAgent/0.1.0";
 
 // ============================================================================
 // API CONFIGURATION
 // ============================================================================
 
+#[allow(dead_code)]
 pub const CLAUDE_API_BASE_URL: &str = "https://api.anthropic.com/v1";
+#[allow(dead_code)]
 pub const CLAUDE_API_MESSAGES_ENDPOINT: &str = "/messages";
+#[allow(dead_code)]
 pub const CLAUDE_API_VERSION: &str = "2023-06-01";
 
 /// Full Claude API messages URL
+#[allow(dead_code)]
 pub const fn claude_messages_url() -> &'static str {
     // Note: In const fn, we can't use format!, so we define the full URL
     "https://api.anthropic.com/v1/messages"
@@ -47,6 +54,7 @@ pub const SUPPORTED_MODELS: &[&str] = &[
 pub const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
 
 /// Model capabilities mapping
+#[allow(dead_code)]
 pub struct ModelInfo {
     pub family: &'static str,
     pub variant: &'static str,
@@ -58,6 +66,7 @@ pub struct ModelInfo {
 }
 
 /// Get model information by model name
+#[allow(dead_code)]
 pub fn get_model_info(model: &str) -> Option<ModelInfo> {
     match model {
         "claude-sonnet-4-20250514" => Some(ModelInfo {
@@ -97,6 +106,7 @@ pub fn get_model_info(model: &str) -> Option<ModelInfo> {
 // ============================================================================
 
 /// File patterns to always block for security
+#[allow(dead_code)]
 pub const SECURITY_BLOCKED_PATTERNS: &[&str] = &[
     "*.env",
     ".env*",
@@ -114,6 +124,7 @@ pub const SECURITY_BLOCKED_PATTERNS: &[&str] = &[
 ];
 
 /// Files that should never be overwritten
+#[allow(dead_code)]
 pub const PROTECTED_FILES: &[&str] = &[
     "Cargo.toml",
     "package.json",
@@ -135,6 +146,7 @@ pub const SUSPICIOUS_PATTERNS: &[&str] = &[
 ];
 
 /// Allowed file extensions for read operations
+#[allow(dead_code)]
 pub const ALLOWED_FILE_EXTENSIONS: &[&str] = &[
     "rs", "js", "ts", "json", "toml", "yaml", "yml", "md", "txt", "html", "css", "py", "go",
     "java", "cpp", "c", "h", "hpp", "sh", "bat", "ps1",
@@ -146,6 +158,7 @@ pub const ALLOWED_FILE_EXTENSIONS: &[&str] = &[
 
 pub const ENV_CLAUDE_API_KEY: &str = "CLAUDE_API_KEY";
 pub const ENV_LOG_LEVEL: &str = "LOG_LEVEL";
+#[allow(dead_code)]
 pub const ENV_CONFIG_PATH: &str = "CONFIG_PATH";
 
 // ============================================================================
@@ -181,6 +194,7 @@ pub const RETRY_BASE_DELAY_MS: u64 = 500;
 pub const TAURI_INIT_TIMEOUT_MS: u64 = 5000;
 
 /// Interval for checking Tauri availability
+#[allow(dead_code)]
 pub const TAURI_CHECK_INTERVAL_MS: u64 = 100;
 
 /// Auto-scroll delay for chat messages
@@ -241,13 +255,16 @@ pub fn get_file_icon(extension: &str) -> &'static str {
 // ============================================================================
 
 /// Standard error message templates for consistency
+#[allow(dead_code)]
 pub mod error_templates {
     pub const EMPTY_INPUT: &str = "Input cannot be empty";
+    #[allow(dead_code)]
     pub const INVALID_INPUT: &str = "Invalid input provided";
     pub const API_KEY_NOT_SET: &str = "Claude API key not set. Please set the API key first";
     pub const API_KEY_NOT_FOUND: &str = "No API key found in environment variables";
     pub const CLIENT_CREATION_FAILED: &str = "Failed to create Claude client";
     pub const API_ERROR: &str = "Claude API error";
+    #[allow(dead_code)]
     pub const TOOL_EXECUTION_FAILED: &str = "Tool execution failed";
     pub const UNSAFE_CONTENT: &str = "Message contains potentially unsafe content";
     pub const WHITELIST_SAVE_FAILED: &str = "Failed to save whitelist";
@@ -269,21 +286,25 @@ pub mod error_templates {
 // ============================================================================
 
 /// Convert milliseconds to Duration
+#[allow(dead_code)]
 pub const fn ms_to_duration(ms: u64) -> Duration {
     Duration::from_millis(ms)
 }
 
 /// Convert seconds to Duration  
+#[allow(dead_code)]
 pub const fn secs_to_duration(secs: u64) -> Duration {
     Duration::from_secs(secs)
 }
 
 /// Check if a model supports thinking
+#[allow(dead_code)]
 pub fn model_supports_thinking(model: &str) -> bool {
     matches!(model, "claude-sonnet-4-20250514")
 }
 
 /// Check if a model is Claude 4
+#[allow(dead_code)]
 pub fn is_claude_4_model(model: &str) -> bool {
     model.starts_with("claude-4") || model.contains("-4-")
 }

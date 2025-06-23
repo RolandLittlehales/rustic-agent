@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
 
+use super::constants::{circuit_breaker, error_handling, telemetry};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ErrorContext {
     pub operation: String,
@@ -101,8 +103,11 @@ impl ErrorContext {
         }
 
         // Truncate very long messages to prevent log flooding
-        if sanitized.len() > 500 {
-            format!("{}...[TRUNCATED]", &sanitized[..497])
+        if sanitized.len() > error_handling::MAX_ERROR_MESSAGE_LENGTH {
+            format!(
+                "{}...[TRUNCATED]",
+                &sanitized[..error_handling::ERROR_MESSAGE_TRUNCATE_LENGTH]
+            )
         } else {
             sanitized
         }
@@ -131,8 +136,11 @@ impl ErrorContext {
                 "[REDACTED]".to_string()
             } else if key.to_lowercase().contains("path") {
                 Self::sanitize_error_message(value)
-            } else if value.len() > 100 {
-                format!("{}...[TRUNCATED]", &value[..97])
+            } else if value.len() > error_handling::MAX_METADATA_VALUE_LENGTH {
+                format!(
+                    "{}...[TRUNCATED]",
+                    &value[..error_handling::METADATA_VALUE_TRUNCATE_LENGTH]
+                )
             } else {
                 value.clone()
             };
@@ -380,7 +388,7 @@ impl From<reqwest::Error> for ClaudeError {
     fn from(error: reqwest::Error) -> Self {
         if error.is_timeout() {
             ClaudeError::TimeoutError {
-                duration: std::time::Duration::from_secs(120),
+                duration: error_handling::http_timeout(),
                 context: None,
             }
         } else {
@@ -411,14 +419,14 @@ pub struct ErrorHandlerConfig {
 impl Default for ErrorHandlerConfig {
     fn default() -> Self {
         Self {
-            max_retries: 3,
-            base_delay: std::time::Duration::from_millis(500),
-            max_delay: std::time::Duration::from_secs(30),
-            backoff_multiplier: 2.0,
+            max_retries: error_handling::DEFAULT_MAX_RETRIES,
+            base_delay: error_handling::base_delay(),
+            max_delay: error_handling::max_delay(),
+            backoff_multiplier: error_handling::DEFAULT_BACKOFF_MULTIPLIER,
             jitter: true,
             circuit_breaker_enabled: true,
-            failure_threshold: 5,
-            circuit_timeout: std::time::Duration::from_secs(60),
+            failure_threshold: error_handling::DEFAULT_FAILURE_THRESHOLD,
+            circuit_timeout: error_handling::circuit_timeout(),
         }
     }
 }
@@ -435,9 +443,9 @@ pub struct CircuitBreaker {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CircuitBreakerState {
-    Closed = 0,
-    Open = 1,
-    HalfOpen = 2,
+    Closed = circuit_breaker::STATE_CLOSED as isize,
+    Open = circuit_breaker::STATE_OPEN as isize,
+    HalfOpen = circuit_breaker::STATE_HALF_OPEN as isize,
 }
 
 impl CircuitBreaker {
@@ -469,6 +477,7 @@ impl CircuitBreaker {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_open(&self) -> bool {
         !self.can_execute()
     }
@@ -548,9 +557,9 @@ impl BoundedErrorCounter {
     pub fn new() -> Self {
         Self {
             counts: HashMap::new(),
-            max_entries: 100, // Limit to 100 different error types
+            max_entries: telemetry::MAX_ERROR_TYPES,
             last_cleanup: std::time::Instant::now(),
-            cleanup_interval: std::time::Duration::from_secs(300), // Clean up every 5 minutes
+            cleanup_interval: telemetry::cleanup_interval(),
         }
     }
 
@@ -569,6 +578,7 @@ impl BoundedErrorCounter {
         *self.counts.entry(error_type.to_string()).or_insert(0) += 1;
     }
 
+    #[allow(dead_code)]
     pub fn get_counts(&self) -> HashMap<String, u64> {
         self.counts.clone()
     }
@@ -623,6 +633,7 @@ impl ErrorTelemetry {
     }
 
     /// Print telemetry summary for monitoring
+    #[allow(dead_code)]
     pub fn print_summary(&self) {
         let total_errors = self.total_errors.load(std::sync::atomic::Ordering::Relaxed);
         let total_retries = self
@@ -656,7 +667,8 @@ impl ErrorTelemetry {
 
         let total_operations = successful_ops + total_errors;
         if total_operations > 0 {
-            let success_rate = (successful_ops as f64 / total_operations as f64) * 100.0;
+            let success_rate = (successful_ops as f64 / total_operations as f64)
+                * error_handling::SUCCESS_RATE_PERCENTAGE;
             println!("   • Success Rate: {:.2}%", success_rate);
         }
     }
@@ -693,11 +705,13 @@ impl ErrorHandler {
     }
 
     /// Get a reference to the telemetry data
+    #[allow(dead_code)]
     pub fn telemetry(&self) -> &ErrorTelemetry {
         &self.telemetry
     }
 
     /// Print telemetry summary for monitoring
+    #[allow(dead_code)]
     pub fn print_telemetry_summary(&self) {
         self.telemetry.print_summary();
     }
@@ -834,8 +848,12 @@ impl ErrorHandler {
             .hash(&mut hasher);
         let hash = hasher.finish();
 
-        let jitter_factor = 0.1; // 10% jitter
-        let jitter = ((hash % 1000) as f64 / 1000.0 - 0.5) * 2.0 * jitter_factor;
+        let jitter_factor = error_handling::JITTER_FACTOR;
+        let jitter = ((hash % error_handling::JITTER_MODULUS) as f64
+            / error_handling::JITTER_MODULUS as f64
+            - 0.5)
+            * 2.0
+            * jitter_factor;
         let jittered_ms = (delay.as_millis() as f64) * (1.0 + jitter);
         std::time::Duration::from_millis(jittered_ms.max(0.0) as u64)
     }

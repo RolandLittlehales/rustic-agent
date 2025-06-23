@@ -1,3 +1,4 @@
+use super::constants::{model_config, model_costs, model_ids};
 use super::error::{ClaudeError, ClaudeResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -90,160 +91,225 @@ impl ModelRegistry {
     fn initialize_models(&mut self) {
         // Claude 4 models
         self.models.insert(
-            "claude-4-opus-20250522".to_string(),
+            model_ids::CLAUDE_4_OPUS.to_string(),
             ModelInfo {
-                name: "claude-4-opus-20250522".to_string(),
+                name: model_ids::CLAUDE_4_OPUS.to_string(),
                 family: "claude-4".to_string(),
                 variant: "opus".to_string(),
-                max_tokens: 8192,
-                context_window: 200000,
+                max_tokens: model_config::CLAUDE_4_MAX_TOKENS,
+                context_window: model_config::CLAUDE_4_CONTEXT_WINDOW,
                 supports_thinking: true,
                 supports_tool_use: true,
                 supports_streaming: true,
-                cost_per_million_input: 15.0,
-                cost_per_million_output: 75.0,
-                release_date: "2025-05-22".to_string(),
+                cost_per_million_input: model_costs::CLAUDE_4_OPUS_INPUT_COST,
+                cost_per_million_output: model_costs::CLAUDE_4_OPUS_OUTPUT_COST,
+                release_date: model_ids::extract_release_date(model_ids::CLAUDE_4_OPUS).to_string(),
                 is_deprecated: false,
                 performance_tier: PerformanceTier::Powerful,
             },
         );
 
         self.models.insert(
-            "claude-4-sonnet-20250522".to_string(),
+            model_ids::CLAUDE_4_SONNET.to_string(),
             ModelInfo {
-                name: "claude-4-sonnet-20250522".to_string(),
+                name: model_ids::CLAUDE_4_SONNET.to_string(),
                 family: "claude-4".to_string(),
                 variant: "sonnet".to_string(),
-                max_tokens: 8192,
-                context_window: 200000,
+                max_tokens: model_config::CLAUDE_4_MAX_TOKENS,
+                context_window: model_config::CLAUDE_4_CONTEXT_WINDOW,
                 supports_thinking: true,
                 supports_tool_use: true,
                 supports_streaming: true,
-                cost_per_million_input: 3.0,
-                cost_per_million_output: 15.0,
-                release_date: "2025-05-22".to_string(),
+                cost_per_million_input: model_costs::CLAUDE_4_SONNET_INPUT_COST,
+                cost_per_million_output: model_costs::CLAUDE_4_SONNET_OUTPUT_COST,
+                release_date: model_ids::extract_release_date(model_ids::CLAUDE_4_SONNET)
+                    .to_string(),
+                is_deprecated: false,
+                performance_tier: PerformanceTier::Balanced,
+            },
+        );
+
+        // Claude 3.7 models (enhanced 3.5 series)
+        self.models.insert(
+            model_ids::CLAUDE_3_7_SONNET.to_string(),
+            ModelInfo {
+                name: model_ids::CLAUDE_3_7_SONNET.to_string(),
+                family: "claude-3.7".to_string(),
+                variant: "sonnet".to_string(),
+                max_tokens: model_config::CLAUDE_4_MAX_TOKENS,
+                context_window: model_config::CLAUDE_4_CONTEXT_WINDOW,
+                supports_thinking: true,
+                supports_tool_use: true,
+                supports_streaming: true,
+                cost_per_million_input: model_costs::CLAUDE_3_7_SONNET_INPUT_COST,
+                cost_per_million_output: model_costs::CLAUDE_3_7_SONNET_OUTPUT_COST,
+                release_date: model_ids::extract_release_date(model_ids::CLAUDE_3_7_SONNET)
+                    .to_string(),
+                is_deprecated: false,
+                performance_tier: PerformanceTier::Balanced,
+            },
+        );
+
+        // Claude 3.5 models
+        self.models.insert(
+            model_ids::CLAUDE_3_5_SONNET_LATEST.to_string(),
+            ModelInfo {
+                name: model_ids::CLAUDE_3_5_SONNET_LATEST.to_string(),
+                family: "claude-3.5".to_string(),
+                variant: "sonnet".to_string(),
+                max_tokens: model_config::CLAUDE_3_5_MAX_TOKENS,
+                context_window: model_config::CLAUDE_4_CONTEXT_WINDOW,
+                supports_thinking: false,
+                supports_tool_use: true,
+                supports_streaming: true,
+                cost_per_million_input: model_costs::CLAUDE_3_5_SONNET_INPUT_COST,
+                cost_per_million_output: model_costs::CLAUDE_3_5_SONNET_OUTPUT_COST,
+                release_date: model_ids::extract_release_date(model_ids::CLAUDE_3_5_SONNET_LATEST)
+                    .to_string(),
                 is_deprecated: false,
                 performance_tier: PerformanceTier::Balanced,
             },
         );
 
         self.models.insert(
-            "claude-4-haiku-20250522".to_string(),
+            model_ids::CLAUDE_3_5_HAIKU.to_string(),
             ModelInfo {
-                name: "claude-4-haiku-20250522".to_string(),
-                family: "claude-4".to_string(),
+                name: model_ids::CLAUDE_3_5_HAIKU.to_string(),
+                family: "claude-3.5".to_string(),
                 variant: "haiku".to_string(),
-                max_tokens: 8192,
-                context_window: 200000,
-                supports_thinking: true,
+                max_tokens: model_config::CLAUDE_3_5_MAX_TOKENS,
+                context_window: model_config::CLAUDE_4_CONTEXT_WINDOW,
+                supports_thinking: false,
                 supports_tool_use: true,
                 supports_streaming: true,
-                cost_per_million_input: 0.25,
-                cost_per_million_output: 1.25,
-                release_date: "2025-05-22".to_string(),
+                cost_per_million_input: model_costs::CLAUDE_3_5_HAIKU_INPUT_COST,
+                cost_per_million_output: model_costs::CLAUDE_3_5_HAIKU_OUTPUT_COST,
+                release_date: model_ids::extract_release_date(model_ids::CLAUDE_3_5_SONNET_LATEST)
+                    .to_string(),
                 is_deprecated: false,
                 performance_tier: PerformanceTier::Fast,
             },
         );
 
-        // Claude 3.5 models (legacy support)
+        // Claude 3 models (legacy but active)
         self.models.insert(
-            "claude-3-5-sonnet-20241022".to_string(),
+            model_ids::CLAUDE_3_OPUS.to_string(),
             ModelInfo {
-                name: "claude-3-5-sonnet-20241022".to_string(),
-                family: "claude-3.5".to_string(),
-                variant: "sonnet".to_string(),
-                max_tokens: 8192,
-                context_window: 200000,
+                name: model_ids::CLAUDE_3_OPUS.to_string(),
+                family: "claude-3".to_string(),
+                variant: "opus".to_string(),
+                max_tokens: model_config::CLAUDE_3_5_MAX_TOKENS,
+                context_window: model_config::CLAUDE_4_CONTEXT_WINDOW,
                 supports_thinking: false,
                 supports_tool_use: true,
                 supports_streaming: true,
-                cost_per_million_input: 3.0,
-                cost_per_million_output: 15.0,
-                release_date: "2024-10-22".to_string(),
+                cost_per_million_input: model_costs::CLAUDE_3_OPUS_INPUT_COST,
+                cost_per_million_output: model_costs::CLAUDE_3_OPUS_OUTPUT_COST,
+                release_date: model_ids::extract_release_date(model_ids::CLAUDE_3_OPUS).to_string(),
                 is_deprecated: false,
-                performance_tier: PerformanceTier::Balanced,
+                performance_tier: PerformanceTier::Powerful,
             },
         );
 
         self.models.insert(
-            "claude-3-5-haiku-20241022".to_string(),
+            model_ids::CLAUDE_3_HAIKU.to_string(),
             ModelInfo {
-                name: "claude-3-5-haiku-20241022".to_string(),
-                family: "claude-3.5".to_string(),
+                name: model_ids::CLAUDE_3_HAIKU.to_string(),
+                family: "claude-3".to_string(),
                 variant: "haiku".to_string(),
-                max_tokens: 8192,
-                context_window: 200000,
+                max_tokens: model_config::CLAUDE_3_5_MAX_TOKENS,
+                context_window: model_config::CLAUDE_4_CONTEXT_WINDOW,
                 supports_thinking: false,
                 supports_tool_use: true,
                 supports_streaming: true,
-                cost_per_million_input: 0.8,
-                cost_per_million_output: 4.0,
-                release_date: "2024-10-22".to_string(),
+                cost_per_million_input: model_costs::CLAUDE_3_HAIKU_INPUT_COST,
+                cost_per_million_output: model_costs::CLAUDE_3_HAIKU_OUTPUT_COST,
+                release_date: model_ids::extract_release_date(model_ids::CLAUDE_3_HAIKU)
+                    .to_string(),
                 is_deprecated: false,
                 performance_tier: PerformanceTier::Fast,
             },
         );
 
-        // Set primary models for each tier
+        // Set primary models for each tier using smart selection
         self.primary_models.insert(
             PerformanceTier::Powerful,
-            "claude-4-opus-20250522".to_string(),
+            model_ids::latest_claude_4_opus().to_string(),
         );
         self.primary_models.insert(
             PerformanceTier::Balanced,
-            "claude-4-sonnet-20250522".to_string(),
+            model_ids::latest_claude_4_sonnet().to_string(),
         );
         self.primary_models
-            .insert(PerformanceTier::Fast, "claude-4-haiku-20250522".to_string());
+            .insert(PerformanceTier::Fast, model_ids::latest_haiku().to_string());
     }
 
     fn setup_fallback_chains(&mut self) {
-        // Claude 4 Opus fallback chain
+        // Claude 4 Opus fallback chain: Opus -> Sonnet -> 3.7 Sonnet -> Haiku
         self.fallback_chains.insert(
-            "claude-4-opus-20250522".to_string(),
+            model_ids::latest_claude_4_opus().to_string(),
             vec![
-                "claude-4-sonnet-20250522".to_string(),
-                "claude-3-5-sonnet-20241022".to_string(),
-                "claude-4-haiku-20250522".to_string(),
+                model_ids::latest_claude_4_sonnet().to_string(),
+                model_ids::get_model_by_variant(model_ids::ModelVariant::Sonnet, -1).to_string(), // 3.7 Sonnet
+                model_ids::latest_haiku().to_string(),
             ],
         );
 
-        // Claude 4 Sonnet fallback chain
+        // Claude 4 Sonnet fallback chain: 4 Sonnet -> 3.7 Sonnet -> 3.5 Sonnet -> Haiku
         self.fallback_chains.insert(
-            "claude-4-sonnet-20250522".to_string(),
+            model_ids::latest_claude_4_sonnet().to_string(),
             vec![
-                "claude-3-5-sonnet-20241022".to_string(),
-                "claude-4-haiku-20250522".to_string(),
-                "claude-3-5-haiku-20241022".to_string(),
+                model_ids::get_model_by_variant(model_ids::ModelVariant::Sonnet, -1).to_string(), // 3.7 Sonnet
+                model_ids::get_model_by_variant(model_ids::ModelVariant::Sonnet, -2).to_string(), // 3.5 Latest
+                model_ids::latest_haiku().to_string(),
             ],
         );
 
-        // Claude 4 Haiku fallback chain
+        // Claude 3.7 Sonnet fallback chain: 3.7 -> 4 Sonnet -> 3.5 Sonnet -> Haiku
         self.fallback_chains.insert(
-            "claude-4-haiku-20250522".to_string(),
+            model_ids::get_model_by_variant(model_ids::ModelVariant::Sonnet, -1).to_string(),
             vec![
-                "claude-3-5-haiku-20241022".to_string(),
-                "claude-3-5-sonnet-20241022".to_string(),
+                model_ids::latest_claude_4_sonnet().to_string(),
+                model_ids::get_model_by_variant(model_ids::ModelVariant::Sonnet, -2).to_string(), // 3.5 Latest
+                model_ids::latest_haiku().to_string(),
             ],
         );
 
-        // Claude 3.5 Sonnet fallback chain
+        // Claude 3.5 Sonnet (latest) fallback chain: 3.5 Latest -> 4 Sonnet -> 3.7 -> Haiku
         self.fallback_chains.insert(
-            "claude-3-5-sonnet-20241022".to_string(),
+            model_ids::get_model_by_variant(model_ids::ModelVariant::Sonnet, -2).to_string(),
             vec![
-                "claude-4-sonnet-20250522".to_string(),
-                "claude-3-5-haiku-20241022".to_string(),
-                "claude-4-haiku-20250522".to_string(),
+                model_ids::latest_claude_4_sonnet().to_string(),
+                model_ids::get_model_by_variant(model_ids::ModelVariant::Sonnet, -1).to_string(), // 3.7 Sonnet
+                model_ids::latest_haiku().to_string(),
             ],
         );
 
-        // Claude 3.5 Haiku fallback chain
+        // Claude 3.5 Haiku fallback chain: 3.5 Haiku -> 3 Haiku -> 3.5 Sonnet
         self.fallback_chains.insert(
-            "claude-3-5-haiku-20241022".to_string(),
+            model_ids::latest_haiku().to_string(),
             vec![
-                "claude-4-haiku-20250522".to_string(),
-                "claude-3-5-sonnet-20241022".to_string(),
+                model_ids::get_model_by_variant(model_ids::ModelVariant::Haiku, -1).to_string(), // 3 Haiku
+                model_ids::get_model_by_variant(model_ids::ModelVariant::Sonnet, -2).to_string(), // 3.5 Sonnet
+            ],
+        );
+
+        // Claude 3 Haiku fallback chain: 3 Haiku -> 3.5 Haiku -> 3.5 Sonnet
+        self.fallback_chains.insert(
+            model_ids::get_model_by_variant(model_ids::ModelVariant::Haiku, -1).to_string(),
+            vec![
+                model_ids::latest_haiku().to_string(), // 3.5 Haiku
+                model_ids::get_model_by_variant(model_ids::ModelVariant::Sonnet, -2).to_string(), // 3.5 Sonnet
+            ],
+        );
+
+        // Claude 3 Opus fallback chain: 3 Opus -> 4 Opus -> 4 Sonnet -> Haiku
+        self.fallback_chains.insert(
+            model_ids::get_model_by_variant(model_ids::ModelVariant::Opus, -1).to_string(),
+            vec![
+                model_ids::latest_claude_4_opus().to_string(),
+                model_ids::latest_claude_4_sonnet().to_string(),
+                model_ids::latest_haiku().to_string(),
             ],
         );
     }
@@ -252,10 +318,12 @@ impl ModelRegistry {
         self.models.get(model_name)
     }
 
+    #[allow(dead_code)]
     pub fn get_all_models(&self) -> Vec<&ModelInfo> {
         self.models.values().collect()
     }
 
+    #[allow(dead_code)]
     pub fn get_available_models(&self) -> Vec<&ModelInfo> {
         self.models
             .values()
@@ -263,6 +331,7 @@ impl ModelRegistry {
             .collect()
     }
 
+    #[allow(dead_code)]
     pub fn get_models_by_tier(&self, tier: &PerformanceTier) -> Vec<&ModelInfo> {
         self.models
             .values()
@@ -270,10 +339,12 @@ impl ModelRegistry {
             .collect()
     }
 
+    #[allow(dead_code)]
     pub fn get_fallback_chain(&self, model_name: &str) -> Option<&Vec<String>> {
         self.fallback_chains.get(model_name)
     }
 
+    #[allow(dead_code)]
     pub fn get_next_fallback(&self, current_model: &str) -> Option<String> {
         let chain = self.get_fallback_chain(current_model)?;
         chain.first().cloned()
@@ -299,6 +370,7 @@ impl ModelRegistry {
         Ok(model_info)
     }
 
+    #[allow(dead_code)]
     pub fn select_optimal_model(&self, criteria: &ModelSelectionCriteria) -> String {
         let available_models = self.get_available_models();
 
@@ -316,7 +388,7 @@ impl ModelRegistry {
             return self
                 .primary_models
                 .get(&PerformanceTier::Balanced)
-                .unwrap_or(&"claude-4-sonnet-20250522".to_string())
+                .unwrap_or(&model_ids::CLAUDE_4_SONNET.to_string())
                 .clone();
         }
 
@@ -335,6 +407,7 @@ impl ModelRegistry {
         best_model.name.clone()
     }
 
+    #[allow(dead_code)]
     fn calculate_model_score(&self, model: &ModelInfo, criteria: &ModelSelectionCriteria) -> f64 {
         let mut score = 0.0;
 
@@ -356,7 +429,7 @@ impl ModelRegistry {
         // Cost priority score (lower cost = higher score when cost priority is high)
         let cost_score = match criteria.cost_priority {
             CostPriority::High => {
-                let max_cost = 75.0; // Claude 4 Opus output cost
+                let max_cost = model_costs::CLAUDE_4_OPUS_OUTPUT_COST;
                 let model_cost = model.cost_per_million_output;
                 3.0 * (1.0 - (model_cost / max_cost))
             }
@@ -385,6 +458,7 @@ impl ModelRegistry {
         score
     }
 
+    #[allow(dead_code)]
     pub fn estimate_cost(
         &self,
         model_name: &str,
@@ -392,7 +466,9 @@ impl ModelRegistry {
         output_tokens: u32,
     ) -> Option<f64> {
         // Validate inputs to prevent overflow and unrealistic values
-        if input_tokens > 10_000_000 || output_tokens > 10_000_000 {
+        if input_tokens > model_costs::MAX_REASONABLE_TOKEN_COUNT
+            || output_tokens > model_costs::MAX_REASONABLE_TOKEN_COUNT
+        {
             // Log warning for unusually large token counts (>10M tokens)
             eprintln!(
                 "⚠️ Warning: Very large token count in cost estimation: input={}, output={}",
@@ -403,8 +479,10 @@ impl ModelRegistry {
         let model_info = self.get_model_info(model_name)?;
 
         // Use checked arithmetic to prevent overflow
-        let input_cost = (input_tokens as f64 / 1_000_000.0) * model_info.cost_per_million_input;
-        let output_cost = (output_tokens as f64 / 1_000_000.0) * model_info.cost_per_million_output;
+        let input_cost = (input_tokens as f64 / model_costs::TOKENS_PER_MILLION)
+            * model_info.cost_per_million_input;
+        let output_cost = (output_tokens as f64 / model_costs::TOKENS_PER_MILLION)
+            * model_info.cost_per_million_output;
 
         // Verify the calculation results are valid
         if input_cost.is_finite() && output_cost.is_finite() {
@@ -424,6 +502,7 @@ impl ModelRegistry {
         }
     }
 
+    #[allow(dead_code)]
     pub fn compare_costs(
         &self,
         models: &[String],
@@ -439,6 +518,7 @@ impl ModelRegistry {
             .collect()
     }
 
+    #[allow(dead_code)]
     pub fn suggest_alternative(
         &self,
         current_model: &str,
@@ -464,13 +544,14 @@ impl Default for ModelRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::claude::constants::test_data;
 
     #[test]
     fn test_model_registry_initialization() {
         let registry = ModelRegistry::new();
         assert!(!registry.models.is_empty());
         assert!(registry
-            .get_model_info("claude-4-sonnet-20250522")
+            .get_model_info(model_ids::CLAUDE_4_SONNET)
             .is_some());
     }
 
@@ -479,7 +560,7 @@ mod tests {
         let registry = ModelRegistry::new();
 
         // Valid model
-        assert!(registry.validate_model("claude-4-sonnet-20250522").is_ok());
+        assert!(registry.validate_model(model_ids::CLAUDE_4_SONNET).is_ok());
 
         // Invalid model
         assert!(registry.validate_model("invalid-model").is_err());
@@ -489,8 +570,8 @@ mod tests {
     fn test_fallback_chains() {
         let registry = ModelRegistry::new();
 
-        let fallback = registry.get_next_fallback("claude-4-opus-20250522");
-        assert_eq!(fallback, Some("claude-4-sonnet-20250522".to_string()));
+        let fallback = registry.get_next_fallback(model_ids::CLAUDE_4_OPUS);
+        assert_eq!(fallback, Some(model_ids::CLAUDE_4_SONNET.to_string()));
     }
 
     #[test]
@@ -515,14 +596,18 @@ mod tests {
     fn test_cost_estimation() {
         let registry = ModelRegistry::new();
 
-        let cost = registry.estimate_cost("claude-4-sonnet-20250522", 1000, 500);
+        let cost = registry.estimate_cost(
+            model_ids::CLAUDE_4_SONNET,
+            test_data::TEST_INPUT_TOKENS,
+            test_data::TEST_OUTPUT_TOKENS,
+        );
         assert!(cost.is_some());
 
-        // 1000 input tokens at 3.0 per million = 0.003
-        // 500 output tokens at 15.0 per million = 0.0075
-        // Total = 0.0105
-        let expected_cost = 0.0105;
-        assert!((cost.unwrap() - expected_cost).abs() < 0.0001);
+        // Expected cost from test constants
+        assert!(
+            (cost.unwrap() - test_data::EXPECTED_CLAUDE_4_SONNET_COST).abs()
+                < test_data::COST_CALCULATION_TOLERANCE
+        );
     }
 
     #[test]
