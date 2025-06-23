@@ -1,14 +1,20 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![allow(clippy::result_large_err)]
 
 use std::sync::Arc;
 use tauri::{async_runtime::Mutex, Manager};
 
 mod claude;
+mod config;
 mod file_watcher;
 mod security;
 use claude::whitelist::{persistence, WhitelistConfig};
 use claude::{ClaudeClient, ClaudeConfig, Conversation, ConversationMessage};
+use config::{
+    constants::{self, error_templates, get_file_icon, DIRECTORY_ICON, SAFETY_BUFFER_RATIO},
+    AppConfig,
+};
 use file_watcher::FileWatcherService;
 use serde_json::Value;
 use tokio::sync::RwLock;
@@ -17,26 +23,40 @@ use tokio::sync::RwLock;
 struct AppState {
     conversation: Arc<Mutex<Conversation>>,
     config: Arc<Mutex<ClaudeConfig>>,
+    app_config: Arc<AppConfig>,
     whitelist: Arc<RwLock<WhitelistConfig>>,
     file_watcher: Arc<FileWatcherService>,
 }
 
+impl AppState {
+    /// Helper to get a clone of the Claude config without repeating the locking pattern
+    async fn get_claude_config(&self) -> ClaudeConfig {
+        let config_guard = self.config.lock().await;
+        config_guard.clone()
+    }
+}
+
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
-fn greet(name: &str) -> Result<String, String> {
+fn greet(name: &str, state: tauri::State<'_, AppState>) -> Result<String, String> {
     if name.is_empty() {
-        return Err("Name cannot be empty".to_string());
+        return Err(error_templates::EMPTY_INPUT.to_string());
     }
 
-    if name.len() > 100 {
-        return Err("Name is too long (max 100 characters)".to_string());
-    }
+    // Use validation limits from configuration
+    state
+        .app_config
+        .validation
+        .validate_name_length(name)
+        .map_err(|e| e.to_string())?;
 
     // Basic input sanitization
+    let safety_limit =
+        (state.app_config.validation.name_max_chars as f32 * SAFETY_BUFFER_RATIO) as usize;
     let sanitized_name = name
         .chars()
         .filter(|c| c.is_alphanumeric() || c.is_whitespace() || *c == '-' || *c == '_')
-        .take(50)
+        .take(safety_limit)
         .collect::<String>();
 
     Ok(format!(
@@ -57,7 +77,7 @@ async fn initialize_with_env_key(state: tauri::State<'_, AppState>) -> Result<St
     let api_key = std::env::var("CLAUDE_API_KEY").unwrap_or_default();
 
     if api_key.is_empty() {
-        return Err("No API key found in environment variables".to_string());
+        return Err(error_templates::API_KEY_NOT_FOUND.to_string());
     }
 
     // Update the config with the API key
@@ -67,12 +87,10 @@ async fn initialize_with_env_key(state: tauri::State<'_, AppState>) -> Result<St
     }
 
     // Create a new Claude client with the updated config
-    let config = {
-        let config_guard = state.config.lock().await;
-        config_guard.clone()
-    };
-    let _client =
-        ClaudeClient::new(config).map_err(|e| format!("Failed to create Claude client: {}", e))?;
+    let config = state.get_claude_config().await;
+    let _client = ClaudeClient::new(config).map_err(|e| {
+        error_templates::with_context(error_templates::CLIENT_CREATION_FAILED, &e.to_string())
+    })?;
 
     Ok("Claude API key initialized from environment".to_string())
 }
@@ -94,12 +112,10 @@ async fn set_claude_api_key(
     }
 
     // Create a new Claude client with the updated config
-    let config = {
-        let config_guard = state.config.lock().await;
-        config_guard.clone()
-    };
-    let _client =
-        ClaudeClient::new(config).map_err(|e| format!("Failed to create Claude client: {}", e))?;
+    let config = state.get_claude_config().await;
+    let _client = ClaudeClient::new(config).map_err(|e| {
+        error_templates::with_context(error_templates::CLIENT_CREATION_FAILED, &e.to_string())
+    })?;
 
     // Note: In a real app, you'd want to properly manage this state with Arc/Mutex
     // For now, we'll just return success
@@ -113,51 +129,42 @@ async fn send_message_to_claude(
 ) -> Result<String, String> {
     // Input validation
     if message.is_empty() {
-        return Err("Message cannot be empty".to_string());
+        return Err(error_templates::EMPTY_INPUT.to_string());
     }
 
-    if message.len() > 50000 {
-        // 50KB limit
-        return Err("Message too long (max 50KB)".to_string());
-    }
+    // Use validation limits from configuration
+    state
+        .app_config
+        .validation
+        .validate_message_length(message.len())
+        .map_err(|e| e.to_string())?;
 
-    // Basic content filtering
-    let suspicious_patterns = [
-        "<script",
-        "javascript:",
-        "data:",
-        "vbscript:",
-        "onload=",
-        "onerror=",
-    ];
+    // Basic content filtering using constants
     let message_lower = message.to_lowercase();
-    for pattern in &suspicious_patterns {
+    for pattern in constants::SUSPICIOUS_PATTERNS {
         if message_lower.contains(pattern) {
-            return Err("Message contains potentially unsafe content".to_string());
+            return Err(error_templates::UNSAFE_CONTENT.to_string());
         }
     }
 
     // Check if we have a valid configuration
-    let config = {
-        let config_guard = state.config.lock().await;
-        config_guard.clone()
-    };
+    let config = state.get_claude_config().await;
 
     if config.api_key.is_empty() {
-        return Err("Claude API key not set. Please set the API key first.".to_string());
+        return Err(error_templates::API_KEY_NOT_SET.to_string());
     }
 
     // Create Claude client
-    let client =
-        ClaudeClient::new(config).map_err(|e| format!("Failed to create Claude client: {}", e))?;
+    let client = ClaudeClient::new(config).map_err(|e| {
+        error_templates::with_context(error_templates::CLIENT_CREATION_FAILED, &e.to_string())
+    })?;
 
     // Send message to Claude
     let response = {
         let mut conversation = state.conversation.lock().await;
-        client
-            .chat(&mut conversation, message)
-            .await
-            .map_err(|e| format!("Claude API error: {}", e))?
+        client.chat(&mut conversation, message).await.map_err(|e| {
+            error_templates::with_context(error_templates::API_ERROR, &e.to_string())
+        })?
     };
 
     Ok(response)
@@ -178,67 +185,69 @@ async fn clear_conversation(state: tauri::State<'_, AppState>) -> Result<String,
     Ok("Conversation cleared".to_string())
 }
 
+/// Execute the list directory tool with the given path
+async fn execute_list_directory_tool(
+    path: String,
+    whitelist: Arc<RwLock<WhitelistConfig>>,
+) -> Result<String, String> {
+    use claude::tools::{AgentTool, ListDirectoryTool};
+
+    let mut tool = ListDirectoryTool::new();
+    tool.set_whitelist(whitelist);
+
+    let mut input = serde_json::Map::new();
+    input.insert("path".to_string(), Value::String(path));
+
+    tool.execute(Value::Object(input)).await.map_err(|e| {
+        println!("❌ Tool execution failed: {}", e);
+        error_templates::operation_failed("list directory", &e.to_string())
+    })
+}
+
+/// Determine the appropriate icon for a file based on its type and extension
+fn determine_file_icon(file_type: &str, file_name: &str) -> String {
+    match file_type {
+        "directory" => DIRECTORY_ICON.to_string(),
+        _ => {
+            let extension = file_name.split('.').next_back().unwrap_or("");
+            get_file_icon(extension).to_string()
+        }
+    }
+}
+
+/// Parse directory listing results into structured FileItem objects
+fn parse_directory_results(result: &str) -> Result<Vec<FileItem>, String> {
+    let mut items = Vec::new();
+    let current_dir = std::env::current_dir().unwrap_or_default();
+
+    for line in result.lines() {
+        if line.is_empty() || line.starts_with("...") {
+            continue;
+        }
+
+        if let Some((name, type_info)) = line.rsplit_once(" (") {
+            let file_type = type_info.trim_end_matches(')');
+            let icon = determine_file_icon(file_type, name);
+
+            items.push(FileItem {
+                name: name.to_string(),
+                file_type: file_type.to_string(),
+                icon,
+                path: format!("{}/{}", current_dir.display(), name),
+            });
+        }
+    }
+
+    Ok(items)
+}
+
 #[tauri::command]
 async fn list_directory(
     path: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<FileItem>, String> {
-    use claude::tools::{AgentTool, ListDirectoryTool};
-
-    let mut tool = ListDirectoryTool::new();
-
-    // Set the whitelist for the tool
-    tool.set_whitelist(state.whitelist.clone());
-
-    let mut input = serde_json::Map::new();
-    input.insert("path".to_string(), Value::String(path.clone()));
-
-    match tool.execute(Value::Object(input)).await {
-        Ok(result) => {
-            // Parse the result string into structured data
-            let mut items = Vec::new();
-            let current_dir = std::env::current_dir().unwrap_or_default();
-
-            for line in result.lines() {
-                if line.is_empty() || line.starts_with("...") {
-                    continue;
-                }
-
-                if let Some((name, type_info)) = line.rsplit_once(" (") {
-                    let file_type = type_info.trim_end_matches(')');
-                    let icon = match file_type {
-                        "directory" => "📁",
-                        _ => {
-                            // Determine icon based on file extension
-                            match name.split('.').next_back().unwrap_or("") {
-                                "rs" => "🦀",
-                                "js" | "ts" => "📄",
-                                "json" => "⚙️",
-                                "md" => "📝",
-                                "toml" => "⚙️",
-                                "html" => "🌐",
-                                "css" => "🎨",
-                                _ => "📄",
-                            }
-                        }
-                    };
-
-                    items.push(FileItem {
-                        name: name.to_string(),
-                        file_type: file_type.to_string(),
-                        icon: icon.to_string(),
-                        path: format!("{}/{}", current_dir.display(), name),
-                    });
-                }
-            }
-
-            Ok(items)
-        }
-        Err(e) => {
-            println!("❌ Tool execution failed: {}", e);
-            Err(format!("Failed to list directory: {}", e))
-        }
-    }
+    let result = execute_list_directory_tool(path, state.whitelist.clone()).await?;
+    parse_directory_results(&result)
 }
 
 #[derive(serde::Serialize)]
@@ -262,11 +271,17 @@ async fn whitelist_add_directory(
         Ok(canonical_path) => {
             // Save to disk
             if let Err(e) = persistence::save(&app, &whitelist).await {
-                return Err(format!("Failed to save whitelist: {}", e));
+                return Err(error_templates::with_context(
+                    error_templates::WHITELIST_SAVE_FAILED,
+                    &e.to_string(),
+                ));
             }
             Ok(format!("Added directory: {}", canonical_path.display()))
         }
-        Err(e) => Err(format!("Failed to add directory: {}", e)),
+        Err(e) => Err(error_templates::operation_failed(
+            "add directory",
+            &e.to_string(),
+        )),
     }
 }
 
@@ -283,14 +298,20 @@ async fn whitelist_remove_directory(
             if removed {
                 // Save to disk
                 if let Err(e) = persistence::save(&app, &whitelist).await {
-                    return Err(format!("Failed to save whitelist: {}", e));
+                    return Err(error_templates::with_context(
+                        error_templates::WHITELIST_SAVE_FAILED,
+                        &e.to_string(),
+                    ));
                 }
                 Ok(format!("Removed directory: {}", path))
             } else {
-                Err("Directory not found in whitelist".to_string())
+                Err(error_templates::DIRECTORY_NOT_FOUND.to_string())
             }
         }
-        Err(e) => Err(format!("Failed to remove directory: {}", e)),
+        Err(e) => Err(error_templates::operation_failed(
+            "remove directory",
+            &e.to_string(),
+        )),
     }
 }
 
@@ -318,7 +339,10 @@ async fn whitelist_set_enabled(
 
     // Save to disk
     if let Err(e) = persistence::save(&app, &whitelist).await {
-        return Err(format!("Failed to save whitelist: {}", e));
+        return Err(error_templates::with_context(
+            error_templates::WHITELIST_SAVE_FAILED,
+            &e.to_string(),
+        ));
     }
 
     Ok(format!(
@@ -361,16 +385,27 @@ async fn stop_file_watching(state: tauri::State<'_, AppState>) -> Result<String,
 }
 
 fn main() {
+    // Load application configuration
+    let app_config = AppConfig::load().unwrap_or_else(|e| {
+        eprintln!("Failed to load app config: {}, using defaults", e);
+        AppConfig::default()
+    });
+
     // Check for API key in environment on startup
-    let initial_api_key = std::env::var("CLAUDE_API_KEY").unwrap_or_default();
+    let initial_api_key = app_config.runtime.api_key.clone().unwrap_or_default();
     if !initial_api_key.is_empty() {
-        println!("🔑 Found CLAUDE_API_KEY in environment");
+        println!(
+            "🔑 Found {} API key in configuration",
+            constants::ENV_CLAUDE_API_KEY
+        );
     }
 
-    // Initialize app state with default values and environment API key if available
+    // Initialize Claude config with values from app config
     let initial_config = ClaudeConfig {
         api_key: initial_api_key,
-        ..Default::default()
+        model: app_config.runtime.model.clone(),
+        max_tokens: app_config.runtime.max_tokens,
+        temperature: app_config.runtime.temperature,
     };
 
     tauri::Builder::default()
@@ -402,6 +437,7 @@ fn main() {
             let app_state = AppState {
                 conversation: Arc::new(Mutex::new(Conversation::default())),
                 config: Arc::new(Mutex::new(initial_config)),
+                app_config: Arc::new(app_config),
                 whitelist: Arc::new(RwLock::new(whitelist_config)),
                 file_watcher,
             };
