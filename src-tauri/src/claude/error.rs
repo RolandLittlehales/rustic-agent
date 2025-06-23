@@ -867,3 +867,314 @@ impl Default for ErrorHandler {
 
 #[allow(dead_code)]
 pub type ClaudeResult<T> = Result<T, ClaudeError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    // Test fixtures and utilities
+    fn create_test_context() -> ErrorContext {
+        ErrorContext::new("test_operation")
+            .with_message_id("msg_123")
+            .with_tool_use_id("tool_456")
+            .add_metadata("test_key", "test_value")
+    }
+
+    fn create_test_errors() -> Vec<ClaudeError> {
+        vec![
+            ClaudeError::TimeoutError { duration: Duration::from_secs(30), context: None },
+            ClaudeError::RateLimitError { retry_after: Some(60), context: None },
+            ClaudeError::ValidationError { field: "model".to_string(), message: "Invalid".to_string(), context: None },
+            ClaudeError::ConfigError { message: "Missing key".to_string(), context: None },
+        ]
+    }
+
+    // Combined ErrorContext tests
+    #[test]
+    fn test_error_context_comprehensive() {
+        // Test creation and builder pattern
+        let context = create_test_context();
+        assert_eq!(context.operation, "test_operation");
+        assert_eq!(context.message_id.as_deref(), Some("msg_123"));
+        assert_eq!(context.tool_use_id.as_deref(), Some("tool_456"));
+        assert_eq!(context.metadata.get("test_key"), Some(&"test_value".to_string()));
+
+        // Test security sanitization patterns
+        let test_cases = vec![
+            ("Error: Invalid API key sk-ant-api03-1234567890abcdef in request", 
+             "Error: Invalid API key [API_KEY_REDACTED] in request"),
+            ("Failed to read /home/username/secret/data.txt", 
+             "Failed to read /[USER_DIR_REDACTED]/secret/data.txt"),
+            ("Cannot access C:\\Users\\JohnDoe\\Documents\\file.doc", 
+             "Cannot access /[USER_DIR_REDACTED]\\Documents\\file.doc"),
+        ];
+
+        for (input, expected) in test_cases {
+            assert_eq!(ErrorContext::sanitize_error_message(input), expected);
+        }
+
+        // Test ID sanitization
+        assert_eq!(ErrorContext::sanitize_id("msg_1234567890abcdef"), "msg_1234...[REDACTED]");
+        assert_eq!(ErrorContext::sanitize_id("short"), "short");
+
+        // Test message truncation
+        let long_msg = "Error: ".to_string() + &"x".repeat(1100);
+        let sanitized = ErrorContext::sanitize_error_message(&long_msg);
+        assert!(sanitized.ends_with("...[TRUNCATED]") && sanitized.len() < 600);
+
+        // Test metadata sanitization
+        let mut test_context = ErrorContext::new("test");
+        let sensitive_keys = vec![("api_key", "sk-ant-123"), ("secret_token", "bearer_xyz")];
+        let safe_keys = vec![("normal_field", "normal_value"), ("file_path", "/home/user/data")];
+        
+        for (key, value) in sensitive_keys.iter().chain(safe_keys.iter()) {
+            test_context.metadata.insert(key.to_string(), value.to_string());
+        }
+
+        let sanitized = test_context.sanitize_metadata();
+        assert_eq!(sanitized.get("api_key"), Some(&"[REDACTED]".to_string()));
+        assert_eq!(sanitized.get("secret_token"), Some(&"[REDACTED]".to_string()));
+        assert_eq!(sanitized.get("normal_field"), Some(&"normal_value".to_string()));
+        assert_eq!(sanitized.get("file_path"), Some(&"/[USER_DIR_REDACTED]/data".to_string()));
+    }
+
+    // Combined ClaudeError tests
+    #[test]
+    fn test_claude_error_comprehensive() {
+        let errors = create_test_errors();
+        
+        // Test retryability classification
+        let retryable_count = errors.iter().filter(|e| e.is_retryable()).count();
+        assert_eq!(retryable_count, 2); // Timeout and RateLimit
+
+        // Test retry delays
+        assert_eq!(errors[1].should_retry_after(), Some(Duration::from_secs(60))); // RateLimit
+        assert_eq!(errors[0].should_retry_after(), Some(Duration::from_secs(5)));  // Timeout
+        assert_eq!(errors[2].should_retry_after(), None); // Validation (non-retryable)
+
+        // Test context attachment
+        let error = ClaudeError::TimeoutError { duration: Duration::from_secs(30), context: None };
+        let context = create_test_context();
+        let error_with_context = error.with_context(context);
+        assert!(error_with_context.get_context().is_some());
+
+        // Test error formatting
+        let api_error = ClaudeError::ApiError {
+            status: 400,
+            message: "Invalid request".to_string(),
+            error_type: Some("invalid_request".to_string()),
+            param: Some("model".to_string()),
+            context: Some(ErrorContext::new("test_operation")),
+        };
+        let display = api_error.to_string();
+        assert!(display.contains("API error (400)") && 
+                display.contains("Invalid request") && 
+                display.contains("[operation: test_operation]"));
+    }
+
+    // Combined CircuitBreaker tests
+    #[test]
+    fn test_circuit_breaker_comprehensive() {
+        let cb = CircuitBreaker::new(3, Duration::from_millis(100));
+
+        // Test initial state and failure progression
+        assert_eq!(cb.get_state(), CircuitBreakerState::Closed);
+        assert!(cb.can_execute());
+
+        // Test failure threshold behavior
+        for i in 1..=2 {
+            cb.record_failure();
+            assert_eq!(cb.get_state(), CircuitBreakerState::Closed);
+            assert!(cb.can_execute(), "Should still execute after {} failures", i);
+        }
+
+        // Third failure should open circuit
+        cb.record_failure();
+        assert_eq!(cb.get_state(), CircuitBreakerState::Open);
+        assert!(!cb.can_execute());
+
+        // Test timeout-based recovery
+        std::thread::sleep(Duration::from_millis(150));
+        assert!(cb.can_execute()); // Should transition to half-open
+        assert_eq!(cb.get_state(), CircuitBreakerState::HalfOpen);
+
+        // Test success resets circuit
+        cb.record_success();
+        assert_eq!(cb.get_state(), CircuitBreakerState::Closed);
+
+        // Test success resets failure count
+        cb.record_failure();
+        cb.record_failure();
+        cb.record_success(); // Reset
+        
+        // Should take 3 more failures to open again
+        cb.record_failure();
+        cb.record_failure();
+        assert_eq!(cb.get_state(), CircuitBreakerState::Closed);
+        cb.record_failure();
+        assert_eq!(cb.get_state(), CircuitBreakerState::Open);
+    }
+
+    // Combined BoundedErrorCounter tests
+    #[test]
+    fn test_bounded_error_counter_comprehensive() {
+        let mut counter = BoundedErrorCounter::new();
+        counter.max_entries = 3;
+        counter.cleanup_interval = Duration::from_millis(10);
+
+        // Test basic counting
+        counter.increment("error_type_1");
+        counter.increment("error_type_1");
+        counter.increment("error_type_2");
+        
+        let counts = counter.get_counts();
+        assert_eq!(counts.get("error_type_1"), Some(&2));
+        assert_eq!(counts.get("error_type_2"), Some(&1));
+
+        // Test max entries enforcement with eviction
+        counter.increment("error_3");
+        counter.increment("error_type_1"); // Make this more frequent
+        counter.increment("error_4"); // Should evict least frequent
+
+        let counts = counter.get_counts();
+        assert_eq!(counts.len(), 3);
+        assert!(counts.contains_key("error_type_1")); // Most frequent kept
+        assert!(counts.contains_key("error_4"));      // New entry added
+
+        // Test cleanup behavior
+        counter.increment("rare_error");
+        counter.increment("common_error");
+        counter.increment("common_error");
+        counter.increment("common_error");
+
+        std::thread::sleep(Duration::from_millis(20));
+        counter.increment("trigger_cleanup");
+
+        let counts = counter.get_counts();
+        assert!(counts.contains_key("common_error"));  // Kept (count > 1)
+        // rare_error might be removed by cleanup or eviction
+    }
+
+    // Combined ErrorTelemetry and ErrorHandler tests
+    #[test]
+    fn test_error_handler_and_telemetry() {
+        // Test configuration
+        let config = ErrorHandlerConfig {
+            max_retries: 3,
+            base_delay: Duration::from_millis(50),
+            max_delay: Duration::from_secs(5),
+            backoff_multiplier: 2.0,
+            jitter: true,
+            circuit_breaker_enabled: true,
+            failure_threshold: 2,
+            circuit_timeout: Duration::from_millis(100),
+        };
+        let handler = ErrorHandler::with_config(config);
+
+        // Test telemetry recording
+        let telemetry = handler.telemetry();
+        telemetry.record_error("api_error");
+        telemetry.record_error("timeout_error");
+        telemetry.record_retry();
+        telemetry.record_success();
+        telemetry.record_circuit_breaker_trigger();
+
+        assert_eq!(telemetry.total_errors.load(std::sync::atomic::Ordering::Relaxed), 2);
+        assert_eq!(telemetry.total_retries.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(telemetry.successful_operations.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(telemetry.circuit_breaker_triggers.load(std::sync::atomic::Ordering::Relaxed), 1);
+
+        // Test delay calculation - exponential backoff
+        let rate_limit_no_retry = ClaudeError::RateLimitError { retry_after: None, context: None };
+        let delays: Vec<_> = (0..3).map(|i| handler.calculate_delay(i, &rate_limit_no_retry)).collect();
+        assert!(delays[1] > delays[0] && delays[2] > delays[1]);
+
+        // Test specific delay override
+        let rate_limit_with_retry = ClaudeError::RateLimitError { retry_after: Some(120), context: None };
+        assert_eq!(handler.calculate_delay(0, &rate_limit_with_retry), Duration::from_secs(120));
+
+        // Test jitter variation
+        let base_delay = Duration::from_secs(1);
+        let jittered_delays: Vec<_> = (0..5).map(|_| handler.apply_jitter(base_delay)).collect();
+        let unique_count = jittered_delays.iter().collect::<std::collections::HashSet<_>>().len();
+        assert!(unique_count > 1); // Should have variation
+        
+        // All should be within reasonable bounds
+        for delay in &jittered_delays {
+            let ms = delay.as_millis();
+            assert!(ms >= 500 && ms <= 1500);
+        }
+    }
+
+    // Async integration tests (reduced count)
+    #[tokio::test]
+    async fn test_error_handler_retry_scenarios() {
+        let handler = ErrorHandler::new();
+
+        // Test successful retry scenario
+        let mut attempt = 0;
+        let result = handler.handle_with_retry(|| {
+            attempt += 1;
+            async move {
+                if attempt < 3 {
+                    Err(ClaudeError::TimeoutError { duration: Duration::from_secs(1), context: None })
+                } else {
+                    Ok("success")
+                }
+            }
+        }).await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "success");
+        assert_eq!(attempt, 3);
+
+        // Test non-retryable error (immediate failure)
+        let mut attempt2 = 0;
+        let result2 = handler.handle_with_retry(|| {
+            attempt2 += 1;
+            async move {
+                Err::<String, _>(ClaudeError::ValidationError {
+                    field: "test".to_string(),
+                    message: "invalid".to_string(),
+                    context: None,
+                })
+            }
+        }).await;
+
+        assert!(result2.is_err());
+        assert_eq!(attempt2, 1); // Should not retry
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_integration() {
+        let mut config = ErrorHandlerConfig::default();
+        config.failure_threshold = 2;
+        config.circuit_timeout = Duration::from_millis(100);
+        let handler = ErrorHandler::with_config(config);
+
+        // Trip circuit breaker with failures
+        for _ in 0..2 {
+            let _ = handler.handle_with_retry(|| async {
+                Err::<String, _>(ClaudeError::TimeoutError {
+                    duration: Duration::from_secs(1),
+                    context: None,
+                })
+            }).await;
+        }
+
+        // Next call should fail immediately
+        let result = handler.handle_with_retry(|| async { Ok("should not execute") }).await;
+        assert!(result.is_err());
+        
+        if let Err(ClaudeError::ConfigError { message, .. }) = result {
+            assert!(message.contains("Circuit breaker is open"));
+        } else {
+            panic!("Expected circuit breaker error");
+        }
+
+        // Verify telemetry
+        let triggers = handler.telemetry().circuit_breaker_triggers.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(triggers >= 1);
+    }
+}
