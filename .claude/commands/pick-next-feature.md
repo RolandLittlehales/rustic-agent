@@ -8,17 +8,18 @@ This command automates feature selection for **comprehensive development work** 
 
 ## 🔄 Process
 
-1. **Check Sequencing**: Review implementation-sequence.md or project documentation for feature ordering
-2. **Filter for Major Features**: 
-   - New system implementations
+1. **Check GitHub Issues**: Get all open issues and check assignment status (assigned = in progress)
+2. **Review Sequencing**: Follow implementation-sequence.md strict dependency order
+3. **Find Next Available**: Select lowest-numbered unassigned issue with satisfied dependencies
+4. **Filter for Major Features**: 
+   - New system implementations (>500 lines)
    - Major architectural changes
-   - Complex multi-file features
+   - Complex multi-component features
    - Breaking changes requiring migration
-   - Features requiring new documentation
-3. **Dependency Validation**: Find first unassigned feature without blocking dependencies
-4. **GitHub Assignment**: Assign selected feature to self on GitHub
-5. **User Confirmation**: Present selected feature and wait for confirmation
-6. **Workflow Trigger**: If confirmed, automatically execute `/start-feature` workflow
+   - Features requiring comprehensive documentation
+5. **GitHub Assignment**: Assign selected feature to self on GitHub
+6. **User Confirmation**: Present selected feature and wait for confirmation
+7. **Workflow Trigger**: If confirmed, automatically execute `/start-feature` workflow
 
 ## ✅ Selection Criteria
 
@@ -121,19 +122,27 @@ If you confirm the selection, the command automatically:
 
 ## ⚙️ Selection Algorithm
 
-### **Priority Scoring Factors**
-- **Strategic importance**: Core system vs nice-to-have
-- **Dependency readiness**: All blockers completed
-- **Resource requirements**: Team capacity and expertise
-- **Risk assessment**: Technical complexity and unknowns
-- **Timeline alignment**: Project milestones and deadlines
+### **Strict Sequencing Logic**
+1. **GitHub Status Check**: `gh issue list --state open --json number,title,assignees`
+2. **Dependency Validation**: Check implementation-sequence.md for prerequisites
+3. **Assignment Filter**: Skip any issues with assignees (they're in progress)
+4. **Sequential Selection**: Choose lowest-numbered unassigned issue with satisfied dependencies
+5. **Complexity Verification**: Ensure issue meets major feature criteria (>500 LOC)
 
-### **Complexity Assessment**
-- **Code scope**: Lines of code and files affected
-- **Integration points**: Number of systems touched
-- **Documentation needs**: Required documentation types
-- **Testing requirements**: Complexity of test strategy
-- **Migration impact**: Breaking changes and compatibility
+### **Key Validation Steps**
+- **Prerequisites Complete**: All dependency issues must be CLOSED (not just assigned)
+- **Unassigned Status**: No assignees means available for work
+- **Sequence Order**: Follow numbered sequence (1.1 → 1.2 → 1.3 → 1.4 → 1.5 → 2.1...)
+- **Major Feature Scope**: Architectural changes, new systems, complex integrations
+
+### **Example Decision Process**
+```
+✅ Issue #6 (1.1): CLOSED - ContentBlock System complete
+✅ Issue #7 (1.2): CLOSED - Error Handling complete  
+🎯 Issue #8 (1.3): OPEN, unassigned, dependencies satisfied → SELECT
+❌ Issue #9 (1.4): OPEN, but requires #8 completion
+❌ Issue #10 (1.5): OPEN, but requires #7 AND #9
+```
 
 ## 🎯 Feature Categories
 
@@ -188,25 +197,31 @@ The command considers:
 
 ## 📊 Example Selection Logic
 
-### **Available Features Analysis**
+### **Real Selection Process**
 ```
-🔍 Analyzing available features...
+🔍 Checking GitHub issues and implementation sequence...
 
-Feature #13: User Authentication System
-❌ Blocked by API integration (#12) - In Progress
+✅ Issue #6 [1.1]: CLOSED - Enhanced ContentBlock System
+✅ Issue #7 [1.2]: CLOSED - Error Handling Framework  
+🎯 Issue #8 [1.3]: OPEN, unassigned - Tool Result Handling
+   Dependencies: 1.1 ✅ + 1.2 ✅ = READY
+   Scope: Major system (~1,500 LOC)
+   Impact: Foundation for all Phase 2 features
 
-Feature #15: Advanced ContentBlock System  
-✅ Dependencies complete (#14)
-✅ High priority (core functionality)
-✅ Well-defined scope
-✅ Ready for implementation
+❌ Issue #9 [1.4]: OPEN, unassigned - Streaming Foundation
+   Dependencies: 1.3 (not complete) = BLOCKED
 
-Feature #18: Advanced Search Interface
-⚠️ Lower priority (enhancement)
-⚠️ UI/UX design pending
+❌ Issue #11 [2.1]: OPEN, unassigned - Parallel Tool Execution  
+   Dependencies: 1.3 + 1.4 (both incomplete) = BLOCKED
 
-🎯 Recommendation: #15 - Best combination of readiness, priority, and impact
+🎯 Selection: #8 - Next in sequence with satisfied dependencies
 ```
+
+### **Key Learnings Applied**
+- **Follow numbered sequence**: Don't skip ahead to higher-numbered issues
+- **Check actual GitHub status**: Closed = complete, assigned = in progress, unassigned = available
+- **Validate dependencies strictly**: All prerequisites must be CLOSED before starting
+- **Sequence over complexity**: Implementation order matters more than individual feature appeal
 
 ## ⚠️ Important Considerations
 
