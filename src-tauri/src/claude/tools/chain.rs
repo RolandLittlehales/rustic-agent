@@ -278,6 +278,7 @@ impl ToolExecutionEngine {
     }
 
     /// Execute a chain of tools with dependency management
+    #[allow(dead_code)] // Reserved for advanced tool workflows
     pub async fn execute_tool_chain(
         &self,
         requests: Vec<ToolRequest>,

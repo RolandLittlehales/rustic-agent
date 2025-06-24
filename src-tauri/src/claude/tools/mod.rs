@@ -11,8 +11,14 @@ pub mod recovery;
 pub mod chain;
 
 // Re-export main types for convenience
-pub use execution::{ToolExecutionContext, ToolExecutionResult, ToolResultData, ToolResultMetadata, FollowUpAction, StatusLevel};
+pub use execution::{ToolExecutionContext, FollowUpAction, StatusLevel};
+
+// Reserved for future integration with Claude client
+#[allow(unused_imports)]
+pub use execution::{ToolExecutionResult, ToolResultData, ToolResultMetadata};
+#[allow(unused_imports)] 
 pub use feedback::FeedbackManager;
+#[allow(unused_imports)]
 pub use recovery::ToolRecoveryManager;
 pub use chain::{ToolRequest, ToolExecutionEngine};
 

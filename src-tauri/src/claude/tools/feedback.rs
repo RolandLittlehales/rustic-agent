@@ -302,8 +302,8 @@ impl ToolFeedbackHandler for DefaultFeedbackHandler {
     }
 
     fn can_handle(&self, result: &ToolExecutionResult) -> bool {
-        // This default handler can handle any result
-        self.tool_patterns.contains_key(&result.tool_name) || true
+        // Check if we have specific patterns for this tool, or handle as default
+        self.tool_patterns.contains_key(&result.tool_name)
     }
 
     fn priority(&self) -> u32 {

@@ -35,6 +35,7 @@ impl ToolExecutionContext {
         }
     }
 
+    #[allow(dead_code)] // Reserved for tool chaining
     pub fn with_parent(mut self, parent_id: String) -> Self {
         self.parent_execution = Some(parent_id);
         self
@@ -55,10 +56,12 @@ impl ToolExecutionContext {
         format!("exec_{}", Uuid::new_v4().simple())
     }
 
+    #[allow(dead_code)] // Reserved for retry logic
     pub fn increment_retry(&mut self) {
         self.metadata.retry_count += 1;
     }
 
+    #[allow(dead_code)] // Reserved for retry logic
     pub fn can_retry(&self) -> bool {
         self.metadata.retry_count < self.metadata.max_retries
     }
@@ -140,6 +143,7 @@ impl ToolExecutionResult {
         }
     }
 
+    #[allow(dead_code)] // Reserved for advanced error handling
     pub fn partial_success(
         execution_id: String,
         tool_name: String,
@@ -476,6 +480,7 @@ impl ToolError {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::enum_variant_names)] // Clear in context, consistent with error taxonomy
 pub enum ToolErrorType {
     ValidationError,
     ExecutionError,
