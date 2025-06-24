@@ -1,7 +1,7 @@
 use crate::claude::{
     error::{ClaudeError, ClaudeResult, ErrorContext, ErrorHandler},
     message_processor::MessageProcessor,
-    tools::{AgentTool, ToolRegistry},
+    tools::{AgentTool, ToolRegistry, ToolExecutionEngine, ToolExecutionContext, FollowUpAction, StatusLevel},
     types::*,
     whitelist::WhitelistConfig,
     ClaudeConfig, Conversation,
@@ -16,9 +16,11 @@ pub struct ClaudeClient {
     config: ClaudeConfig,
     http_client: Client,
     tool_registry: ToolRegistry,
+    tool_execution_engine: ToolExecutionEngine,
     message_processor: MessageProcessor,
     error_handler: ErrorHandler,
     last_request: Mutex<Option<Instant>>,
+    whitelist: Option<Arc<RwLock<WhitelistConfig>>>,
 }
 
 impl ClaudeClient {
@@ -39,13 +41,27 @@ impl ClaudeClient {
         tool_registry.register(crate::claude::tools::WriteFileTool::new());
         tool_registry.register(crate::claude::tools::ListDirectoryTool::new());
 
+        // Initialize enhanced tool execution engine
+        let mut tool_execution_engine = ToolExecutionEngine::new();
+        
+        // Register tools with both registry and execution engine
+        let read_tool = Arc::new(crate::claude::tools::ReadFileTool::new());
+        let write_tool = Arc::new(crate::claude::tools::WriteFileTool::new());
+        let list_tool = Arc::new(crate::claude::tools::ListDirectoryTool::new());
+        
+        tool_execution_engine.register_tool(read_tool.clone());
+        tool_execution_engine.register_tool(write_tool.clone());
+        tool_execution_engine.register_tool(list_tool.clone());
+
         Ok(Self {
             config,
             http_client,
             tool_registry,
+            tool_execution_engine,
             message_processor: MessageProcessor::new(),
             error_handler: ErrorHandler::new(),
             last_request: Mutex::new(None),
+            whitelist: None,
         })
     }
 
@@ -58,7 +74,8 @@ impl ClaudeClient {
     #[allow(dead_code)]
     pub fn set_whitelist(&mut self, whitelist: Arc<RwLock<WhitelistConfig>>) {
         self.tool_registry.set_whitelist(whitelist.clone());
-        self.message_processor.set_whitelist(whitelist);
+        self.message_processor.set_whitelist(whitelist.clone());
+        self.whitelist = Some(whitelist);
     }
 
     pub async fn send_message(
@@ -154,12 +171,18 @@ impl ClaudeClient {
     }
 
     async fn process_response(&self, response: ClaudeResponse) -> ClaudeResult<String> {
-        let mut result_parts = Vec::new();
+        self.process_response_with_tools(response).await
+    }
+
+    /// Enhanced response processing with structured tool execution
+    async fn process_response_with_tools(&self, response: ClaudeResponse) -> ClaudeResult<String> {
+        let mut processed_content = Vec::new();
+        let mut tool_results = Vec::new();
 
         for content_block in &response.content {
             match content_block {
                 ContentBlock::Text { text } => {
-                    result_parts.push(text.clone());
+                    processed_content.push(text.clone());
                 }
                 ContentBlock::ToolUse { id: _, name, input } => {
                     // Validate tool use first
@@ -168,31 +191,81 @@ impl ClaudeClient {
                         .validate_tool_use(content_block)
                         .await
                     {
-                        result_parts.push(format!("Tool '{}' validation error: {}", name, e));
+                        processed_content.push(format!("Tool '{}' validation error: {}", name, e));
                         continue;
                     }
 
-                    match self.tool_registry.execute_tool(name, input.clone()).await {
-                        Ok(tool_result) => {
-                            result_parts.push(format!("Tool '{}' result: {}", name, tool_result));
+                    // Create execution context
+                    let whitelist = self.whitelist.clone().unwrap_or_else(|| {
+                        Arc::new(RwLock::new(WhitelistConfig::default()))
+                    });
+
+                    let context = ToolExecutionContext::new(
+                        name.clone(),
+                        input.clone(),
+                        whitelist,
+                    ).with_timeout(Duration::from_secs(30))
+                     .with_max_retries(3);
+
+                    // Execute tool using enhanced execution engine
+                    let tool_request = crate::claude::tools::ToolRequest::new(
+                        name.clone(),
+                        input.clone(),
+                    );
+
+                    match self.tool_execution_engine.execute_single_tool(tool_request, context).await {
+                        Ok(execution_result) => {
+                            // Process the structured result
+                            let result_content = execution_result.into_content_block();
+                            processed_content.push(format!("Tool '{}' result: {}", name, result_content));
+                            
+                            // Handle follow-up actions if any
+                            if !execution_result.follow_up_actions.is_empty() {
+                                for action in &execution_result.follow_up_actions {
+                                    match action {
+                                        FollowUpAction::ReportStatus { message, level } => {
+                                            let level_str = match level {
+                                                StatusLevel::Info => "INFO",
+                                                StatusLevel::Warning => "WARNING",
+                                                StatusLevel::Error => "ERROR",
+                                            };
+                                            processed_content.push(format!("[{}] {}", level_str, message));
+                                        }
+                                        FollowUpAction::RequestUserInput { prompt, suggested_actions } => {
+                                            processed_content.push(format!("User input requested: {}", prompt));
+                                            if !suggested_actions.is_empty() {
+                                                processed_content.push(format!("Suggestions: {}", suggested_actions.join(", ")));
+                                            }
+                                        }
+                                        _ => {
+                                            // Other follow-up actions would be handled in a more comprehensive implementation
+                                            processed_content.push("Additional follow-up actions available".to_string());
+                                        }
+                                    }
+                                }
+                            }
+
+                            tool_results.push(execution_result);
                         }
                         Err(e) => {
-                            let error_msg = format!("Tool '{}' error: {}", name, e);
-                            result_parts.push(error_msg);
+                            let error_msg = format!("Tool '{}' execution failed: {}", name, e);
+                            processed_content.push(error_msg);
                         }
                     }
                 }
                 ContentBlock::ToolResult { .. } => {
-                    // Tool results in response shouldn't happen, but handle gracefully
+                    // Tool results in response shouldn't happen in this context, but handle gracefully
                 }
                 ContentBlock::Thinking { content } => {
                     // Thinking blocks can be processed or ignored based on configuration
-                    result_parts.push(format!("Thinking: {}", content));
+                    if self.config.supports_thinking() {
+                        processed_content.push(format!("Thinking: {}", content));
+                    }
                 }
             }
         }
 
-        Ok(result_parts.join("\n"))
+        Ok(processed_content.join("\n"))
     }
 
     fn conversation_to_claude_messages(&self, conversation: &Conversation) -> Vec<ClaudeMessage> {
