@@ -1,7 +1,9 @@
 use crate::claude::{
     error::{ClaudeError, ClaudeResult, ErrorContext},
     tools::{
-        execution::{ToolExecutionContext, ToolExecutionResult, ToolResultData, ToolError, ToolErrorType},
+        execution::{
+            ToolError, ToolErrorType, ToolExecutionContext, ToolExecutionResult, ToolResultData,
+        },
         feedback::FeedbackManager,
         recovery::{RecoveryResult, ToolRecoveryManager},
         AgentTool,
@@ -68,10 +70,21 @@ impl ToolRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChainExecutionStatus {
     Pending,
-    Running { current_step: String, progress: f32 },
-    Completed { total_time: Duration, results_count: usize },
-    Failed { error: String, partial_results: usize },
-    Cancelled { reason: String },
+    Running {
+        current_step: String,
+        progress: f32,
+    },
+    Completed {
+        total_time: Duration,
+        results_count: usize,
+    },
+    Failed {
+        error: String,
+        partial_results: usize,
+    },
+    Cancelled {
+        reason: String,
+    },
 }
 
 /// Result of executing a tool chain
@@ -91,18 +104,21 @@ impl ChainExecutionResult {
     }
 
     pub fn get_final_result(&self) -> Option<&ToolExecutionResult> {
-        self.execution_order.last()
+        self.execution_order
+            .last()
             .and_then(|id| self.results.get(id))
     }
 
     pub fn get_all_results(&self) -> Vec<&ToolExecutionResult> {
-        self.execution_order.iter()
+        self.execution_order
+            .iter()
             .filter_map(|id| self.results.get(id))
             .collect()
     }
 
     pub fn get_errors(&self) -> Vec<&ToolExecutionResult> {
-        self.results.values()
+        self.results
+            .values()
             .filter(|result| result.is_error())
             .collect()
     }
@@ -154,9 +170,16 @@ pub struct ToolExecutionEngine {
 
 impl ToolExecutionEngine {
     pub fn new() -> Self {
+        let mut feedback_manager = FeedbackManager::new();
+
+        // Register default feedback handlers
+        feedback_manager.register_handler(Arc::new(
+            crate::claude::tools::feedback::DefaultFeedbackHandler::new(),
+        ));
+
         Self {
             tools: HashMap::new(),
-            feedback_manager: FeedbackManager::new(),
+            feedback_manager,
             recovery_manager: ToolRecoveryManager::default(),
             execution_history: Arc::new(RwLock::new(Vec::new())),
             config: ExecutionConfig::default(),
@@ -181,17 +204,23 @@ impl ToolExecutionEngine {
         context: ToolExecutionContext,
     ) -> ClaudeResult<ToolExecutionResult> {
         let start_time = Instant::now();
-        
-        let tool = self.tools.get(&request.tool_name)
+
+        let tool = self
+            .tools
+            .get(&request.tool_name)
             .ok_or_else(|| ClaudeError::ToolError {
                 tool_name: request.tool_name.clone(),
                 message: format!("Tool '{}' not found", request.tool_name),
-                context: Some(ErrorContext::new("tool_execution")
-                    .add_metadata("tool_name", &request.tool_name)),
+                context: Some(
+                    ErrorContext::new("tool_execution")
+                        .add_metadata("tool_name", &request.tool_name),
+                ),
             })?;
 
         let mut attempt_count = 0;
-        let max_retries = request.max_retries.unwrap_or(self.config.default_max_retries);
+        let max_retries = request
+            .max_retries
+            .unwrap_or(self.config.default_max_retries);
 
         loop {
             // Check for timeout
@@ -213,7 +242,9 @@ impl ToolExecutionEngine {
                     );
 
                     // Process result through feedback manager
-                    if let Ok(follow_up_actions) = self.feedback_manager.process_result(&result).await {
+                    if let Ok(follow_up_actions) =
+                        self.feedback_manager.process_result(&result).await
+                    {
                         let result_with_actions = result.with_follow_up_actions(follow_up_actions);
                         return Ok(result_with_actions);
                     }
@@ -224,15 +255,30 @@ impl ToolExecutionEngine {
                     let tool_error = ToolError {
                         error_type: ToolErrorType::ExecutionError,
                         message: e.to_string(),
-                        details: Some(format!("Tool: {}, Attempt: {}", request.tool_name, attempt_count + 1)),
-                        recovery_suggestions: vec!["Check input parameters".to_string(), "Verify tool configuration".to_string()],
+                        details: Some(format!(
+                            "Tool: {}, Attempt: {}",
+                            request.tool_name,
+                            attempt_count + 1
+                        )),
+                        recovery_suggestions: vec![
+                            "Check input parameters".to_string(),
+                            "Verify tool configuration".to_string(),
+                        ],
                     };
 
                     // Try recovery if retries are available
                     if attempt_count < max_retries {
-                        if let Ok(recovery_actions) = self.recovery_manager.suggest_recovery(&tool_error, &context).await {
+                        if let Ok(recovery_actions) = self
+                            .recovery_manager
+                            .suggest_recovery(&tool_error, &context)
+                            .await
+                        {
                             for action in recovery_actions {
-                                match self.recovery_manager.execute_recovery_action(&action, &context).await {
+                                match self
+                                    .recovery_manager
+                                    .execute_recovery_action(&action, &context)
+                                    .await
+                                {
                                     Ok(RecoveryResult::Retry { modified_context }) => {
                                         attempt_count += 1;
                                         if let Some(_new_context) = modified_context {
@@ -290,18 +336,22 @@ impl ToolExecutionEngine {
 
         // Validate and sort requests by dependencies
         let execution_plan = self.create_execution_plan(&requests)?;
-        
+
         let mut results: HashMap<String, ToolExecutionResult> = HashMap::new();
         let mut execution_order = Vec::new();
-        let mut _current_status = ChainExecutionStatus::Running { 
-            current_step: "Starting".to_string(), 
-            progress: 0.0 
+        let mut _current_status = ChainExecutionStatus::Running {
+            current_step: "Starting".to_string(),
+            progress: 0.0,
         };
 
         for (phase_index, phase) in execution_plan.phases.iter().enumerate() {
             let progress = (phase_index as f32) / (execution_plan.phases.len() as f32);
             _current_status = ChainExecutionStatus::Running {
-                current_step: format!("Phase {} of {}", phase_index + 1, execution_plan.phases.len()),
+                current_step: format!(
+                    "Phase {} of {}",
+                    phase_index + 1,
+                    execution_plan.phases.len()
+                ),
                 progress,
             };
 
@@ -310,7 +360,7 @@ impl ToolExecutionEngine {
                 // Single tool execution
                 let request = &phase[0];
                 let context = self.create_execution_context(request, whitelist.clone());
-                
+
                 match self.execute_single_tool(request.clone(), context).await {
                     Ok(result) => {
                         execution_order.push(request.id.clone());
@@ -320,7 +370,7 @@ impl ToolExecutionEngine {
                         // Handle chain failure
                         let total_time = start_time.elapsed();
                         metadata.completed_at = Some(chrono::Utc::now());
-                        
+
                         return Ok(ChainExecutionResult {
                             chain_id,
                             status: ChainExecutionStatus::Failed {
@@ -338,7 +388,7 @@ impl ToolExecutionEngine {
                 // Parallel execution
                 metadata.parallel_executions += 1;
                 let parallel_results = self.execute_parallel_phase(phase, whitelist.clone()).await;
-                
+
                 for (request_id, result) in parallel_results {
                     match result {
                         Ok(tool_result) => {
@@ -349,7 +399,7 @@ impl ToolExecutionEngine {
                             // Handle parallel execution failure
                             let total_time = start_time.elapsed();
                             metadata.completed_at = Some(chrono::Utc::now());
-                            
+
                             return Ok(ChainExecutionResult {
                                 chain_id,
                                 status: ChainExecutionStatus::Failed {
@@ -398,7 +448,7 @@ impl ToolExecutionEngine {
         // For now, execute sequentially to avoid lifetime issues
         // In a full implementation, we'd need to restructure to support true parallelism
         let mut results = Vec::new();
-        
+
         for request in phase {
             let context = self.create_execution_context(request, whitelist.clone());
             let result = self.execute_single_tool(request.clone(), context).await;
@@ -413,11 +463,8 @@ impl ToolExecutionEngine {
         request: &ToolRequest,
         whitelist: Arc<RwLock<crate::claude::whitelist::WhitelistConfig>>,
     ) -> ToolExecutionContext {
-        let mut context = ToolExecutionContext::new(
-            request.tool_name.clone(),
-            request.input.clone(),
-            whitelist,
-        );
+        let mut context =
+            ToolExecutionContext::new(request.tool_name.clone(), request.input.clone(), whitelist);
 
         if let Some(timeout) = request.timeout {
             context = context.with_timeout(timeout);
@@ -437,16 +484,21 @@ impl ToolExecutionEngine {
         // Topological sort to determine execution order
         let mut plan = ExecutionPlan { phases: Vec::new() };
         let mut remaining: HashSet<String> = requests.iter().map(|r| r.id.clone()).collect();
-        let request_map: HashMap<String, &ToolRequest> = requests.iter().map(|r| (r.id.clone(), r)).collect();
+        let request_map: HashMap<String, &ToolRequest> =
+            requests.iter().map(|r| (r.id.clone(), r)).collect();
 
         while !remaining.is_empty() {
             let mut current_phase = Vec::new();
 
             // Find all requests that have no pending dependencies
-            let ready_requests: Vec<_> = remaining.iter()
+            let ready_requests: Vec<_> = remaining
+                .iter()
                 .filter(|&id| {
                     let request = request_map[id];
-                    request.depends_on.iter().all(|dep| !remaining.contains(dep))
+                    request
+                        .depends_on
+                        .iter()
+                        .all(|dep| !remaining.contains(dep))
                 })
                 .cloned()
                 .collect();
@@ -480,9 +532,11 @@ impl ToolExecutionEngine {
                     return Err(ClaudeError::ValidationError {
                         field: "dependencies".to_string(),
                         message: format!("Dependency '{}' not found in request list", dep),
-                        context: Some(ErrorContext::new("dependency_validation")
-                            .add_metadata("request_id", &request.id)
-                            .add_metadata("missing_dependency", dep)),
+                        context: Some(
+                            ErrorContext::new("dependency_validation")
+                                .add_metadata("request_id", &request.id)
+                                .add_metadata("missing_dependency", dep),
+                        ),
                     });
                 }
             }
@@ -491,12 +545,17 @@ impl ToolExecutionEngine {
         Ok(())
     }
 
-    fn calculate_performance_metrics(&self, results: &HashMap<String, ToolExecutionResult>, total_time: Duration) -> PerformanceMetrics {
+    fn calculate_performance_metrics(
+        &self,
+        results: &HashMap<String, ToolExecutionResult>,
+        total_time: Duration,
+    ) -> PerformanceMetrics {
         if results.is_empty() {
             return PerformanceMetrics::default();
         }
 
-        let execution_times: Vec<_> = results.values()
+        let execution_times: Vec<_> = results
+            .values()
             .map(|r| r.metadata.execution_time)
             .collect();
 
@@ -508,7 +567,8 @@ impl ToolExecutionEngine {
         // Calculate parallel efficiency (how much time we saved by running in parallel)
         let sequential_time = total_execution_time;
         let parallel_efficiency = if sequential_time > Duration::from_millis(0) {
-            (sequential_time.as_millis() as f32 - total_time.as_millis() as f32) / sequential_time.as_millis() as f32
+            (sequential_time.as_millis() as f32 - total_time.as_millis() as f32)
+                / sequential_time.as_millis() as f32
         } else {
             0.0
         };
@@ -547,11 +607,11 @@ impl ToolExecutionEngine {
     /// Get execution statistics
     pub async fn get_execution_stats(&self) -> ExecutionStats {
         let history = self.execution_history.read().await;
-        
+
         let total_chains = history.len();
         let successful_chains = history.iter().filter(|r| r.is_success()).count();
         let failed_chains = total_chains - successful_chains;
-        
+
         let average_execution_time = if !history.is_empty() {
             let total_time: Duration = history.iter().map(|r| r.total_time).sum();
             total_time / total_chains as u32
@@ -564,10 +624,10 @@ impl ToolExecutionEngine {
             successful_chains,
             failed_chains,
             average_execution_time,
-            success_rate: if total_chains > 0 { 
-                successful_chains as f32 / total_chains as f32 
-            } else { 
-                0.0 
+            success_rate: if total_chains > 0 {
+                successful_chains as f32 / total_chains as f32
+            } else {
+                0.0
             },
         }
     }
@@ -626,21 +686,31 @@ mod tests {
 
     fn create_test_requests() -> Vec<ToolRequest> {
         vec![
-            ToolRequest::new("read_file".to_string(), serde_json::json!({"path": "input.txt"})),
-            ToolRequest::new("process_data".to_string(), serde_json::json!({"data": "test"}))
-                .with_dependency("req_1".to_string()),
-            ToolRequest::new("write_file".to_string(), serde_json::json!({"path": "output.txt", "content": "result"}))
-                .with_dependency("req_2".to_string()),
+            ToolRequest::new(
+                "read_file".to_string(),
+                serde_json::json!({"path": "input.txt"}),
+            ),
+            ToolRequest::new(
+                "process_data".to_string(),
+                serde_json::json!({"data": "test"}),
+            )
+            .with_dependency("req_1".to_string()),
+            ToolRequest::new(
+                "write_file".to_string(),
+                serde_json::json!({"path": "output.txt", "content": "result"}),
+            )
+            .with_dependency("req_2".to_string()),
         ]
     }
 
     #[test]
     fn test_tool_request_creation() {
-        let request = ToolRequest::new("test_tool".to_string(), serde_json::json!({"key": "value"}))
-            .with_dependency("dep_1".to_string())
-            .with_timeout(Duration::from_secs(30))
-            .with_max_retries(5)
-            .with_metadata("priority".to_string(), "high".to_string());
+        let request =
+            ToolRequest::new("test_tool".to_string(), serde_json::json!({"key": "value"}))
+                .with_dependency("dep_1".to_string())
+                .with_timeout(Duration::from_secs(30))
+                .with_max_retries(5)
+                .with_metadata("priority".to_string(), "high".to_string());
 
         assert_eq!(request.tool_name, "test_tool");
         assert_eq!(request.depends_on, vec!["dep_1"]);
@@ -652,18 +722,40 @@ mod tests {
     #[test]
     fn test_dependency_validation() {
         let engine = ToolExecutionEngine::new();
-        
+
         // Valid dependencies
         let valid_requests = vec![
-            ToolRequest { id: "1".to_string(), tool_name: "tool1".to_string(), input: serde_json::json!({}), depends_on: vec![], timeout: None, max_retries: None, metadata: HashMap::new() },
-            ToolRequest { id: "2".to_string(), tool_name: "tool2".to_string(), input: serde_json::json!({}), depends_on: vec!["1".to_string()], timeout: None, max_retries: None, metadata: HashMap::new() },
+            ToolRequest {
+                id: "1".to_string(),
+                tool_name: "tool1".to_string(),
+                input: serde_json::json!({}),
+                depends_on: vec![],
+                timeout: None,
+                max_retries: None,
+                metadata: HashMap::new(),
+            },
+            ToolRequest {
+                id: "2".to_string(),
+                tool_name: "tool2".to_string(),
+                input: serde_json::json!({}),
+                depends_on: vec!["1".to_string()],
+                timeout: None,
+                max_retries: None,
+                metadata: HashMap::new(),
+            },
         ];
         assert!(engine.validate_dependencies(&valid_requests).is_ok());
 
         // Invalid dependencies (missing dependency)
-        let invalid_requests = vec![
-            ToolRequest { id: "1".to_string(), tool_name: "tool1".to_string(), input: serde_json::json!({}), depends_on: vec!["missing".to_string()], timeout: None, max_retries: None, metadata: HashMap::new() },
-        ];
+        let invalid_requests = vec![ToolRequest {
+            id: "1".to_string(),
+            tool_name: "tool1".to_string(),
+            input: serde_json::json!({}),
+            depends_on: vec!["missing".to_string()],
+            timeout: None,
+            max_retries: None,
+            metadata: HashMap::new(),
+        }];
         assert!(engine.validate_dependencies(&invalid_requests).is_err());
     }
 
@@ -671,13 +763,37 @@ mod tests {
     fn test_execution_plan_creation() {
         let engine = ToolExecutionEngine::new();
         let requests = vec![
-            ToolRequest { id: "1".to_string(), tool_name: "tool1".to_string(), input: serde_json::json!({}), depends_on: vec![], timeout: None, max_retries: None, metadata: HashMap::new() },
-            ToolRequest { id: "2".to_string(), tool_name: "tool2".to_string(), input: serde_json::json!({}), depends_on: vec![], timeout: None, max_retries: None, metadata: HashMap::new() },
-            ToolRequest { id: "3".to_string(), tool_name: "tool3".to_string(), input: serde_json::json!({}), depends_on: vec!["1".to_string(), "2".to_string()], timeout: None, max_retries: None, metadata: HashMap::new() },
+            ToolRequest {
+                id: "1".to_string(),
+                tool_name: "tool1".to_string(),
+                input: serde_json::json!({}),
+                depends_on: vec![],
+                timeout: None,
+                max_retries: None,
+                metadata: HashMap::new(),
+            },
+            ToolRequest {
+                id: "2".to_string(),
+                tool_name: "tool2".to_string(),
+                input: serde_json::json!({}),
+                depends_on: vec![],
+                timeout: None,
+                max_retries: None,
+                metadata: HashMap::new(),
+            },
+            ToolRequest {
+                id: "3".to_string(),
+                tool_name: "tool3".to_string(),
+                input: serde_json::json!({}),
+                depends_on: vec!["1".to_string(), "2".to_string()],
+                timeout: None,
+                max_retries: None,
+                metadata: HashMap::new(),
+            },
         ];
 
         let plan = engine.create_execution_plan(&requests).unwrap();
-        
+
         // Should have 2 phases: [1, 2] then [3]
         assert_eq!(plan.phases.len(), 2);
         assert_eq!(plan.phases[0].len(), 2); // Tools 1 and 2 can run in parallel
@@ -688,13 +804,29 @@ mod tests {
     fn test_circular_dependency_detection() {
         let engine = ToolExecutionEngine::new();
         let requests = vec![
-            ToolRequest { id: "1".to_string(), tool_name: "tool1".to_string(), input: serde_json::json!({}), depends_on: vec!["2".to_string()], timeout: None, max_retries: None, metadata: HashMap::new() },
-            ToolRequest { id: "2".to_string(), tool_name: "tool2".to_string(), input: serde_json::json!({}), depends_on: vec!["1".to_string()], timeout: None, max_retries: None, metadata: HashMap::new() },
+            ToolRequest {
+                id: "1".to_string(),
+                tool_name: "tool1".to_string(),
+                input: serde_json::json!({}),
+                depends_on: vec!["2".to_string()],
+                timeout: None,
+                max_retries: None,
+                metadata: HashMap::new(),
+            },
+            ToolRequest {
+                id: "2".to_string(),
+                tool_name: "tool2".to_string(),
+                input: serde_json::json!({}),
+                depends_on: vec!["1".to_string()],
+                timeout: None,
+                max_retries: None,
+                metadata: HashMap::new(),
+            },
         ];
 
         let result = engine.create_execution_plan(&requests);
         assert!(result.is_err());
-        
+
         if let Err(ClaudeError::ValidationError { message, .. }) = result {
             assert!(message.contains("Circular dependency"));
         }
@@ -704,7 +836,10 @@ mod tests {
     fn test_chain_execution_result() {
         let result = ChainExecutionResult {
             chain_id: "test_chain".to_string(),
-            status: ChainExecutionStatus::Completed { total_time: Duration::from_secs(5), results_count: 3 },
+            status: ChainExecutionStatus::Completed {
+                total_time: Duration::from_secs(5),
+                results_count: 3,
+            },
             results: HashMap::new(),
             execution_order: vec!["1".to_string(), "2".to_string(), "3".to_string()],
             total_time: Duration::from_secs(5),
@@ -719,10 +854,18 @@ mod tests {
     fn test_performance_metrics_calculation() {
         let engine = ToolExecutionEngine::new();
         let mut results = HashMap::new();
-        
-        let result1 = ToolExecutionResult::success("1".to_string(), "tool1".to_string(), ToolResultData::text("result1"));
-        let result2 = ToolExecutionResult::success("2".to_string(), "tool2".to_string(), ToolResultData::text("result2"));
-        
+
+        let result1 = ToolExecutionResult::success(
+            "1".to_string(),
+            "tool1".to_string(),
+            ToolResultData::text("result1"),
+        );
+        let result2 = ToolExecutionResult::success(
+            "2".to_string(),
+            "tool2".to_string(),
+            ToolResultData::text("result2"),
+        );
+
         results.insert("1".to_string(), result1);
         results.insert("2".to_string(), result2);
 

@@ -110,11 +110,7 @@ pub struct ToolExecutionResult {
 }
 
 impl ToolExecutionResult {
-    pub fn success(
-        execution_id: String,
-        tool_name: String,
-        result: ToolResultData,
-    ) -> Self {
+    pub fn success(execution_id: String, tool_name: String, result: ToolResultData) -> Self {
         Self {
             execution_id,
             tool_name,
@@ -135,7 +131,10 @@ impl ToolExecutionResult {
         Self {
             execution_id,
             tool_name,
-            status: ToolExecutionStatus::Failed { error: error.clone(), recoverable },
+            status: ToolExecutionStatus::Failed {
+                error: error.clone(),
+                recoverable,
+            },
             result: ToolResultData::Text(format!("Tool execution failed: {}", error.message)),
             metadata: ToolResultMetadata::default(),
             follow_up_actions: Vec::new(),
@@ -179,11 +178,19 @@ impl ToolExecutionResult {
     }
 
     pub fn is_success(&self) -> bool {
-        matches!(self.status, ToolExecutionStatus::Success | ToolExecutionStatus::PartialSuccess { .. })
+        matches!(
+            self.status,
+            ToolExecutionStatus::Success | ToolExecutionStatus::PartialSuccess { .. }
+        )
     }
 
     pub fn is_error(&self) -> bool {
-        matches!(self.status, ToolExecutionStatus::Failed { .. } | ToolExecutionStatus::Timeout | ToolExecutionStatus::Cancelled)
+        matches!(
+            self.status,
+            ToolExecutionStatus::Failed { .. }
+                | ToolExecutionStatus::Timeout
+                | ToolExecutionStatus::Cancelled
+        )
     }
 
     pub fn is_recoverable(&self) -> bool {
@@ -200,18 +207,36 @@ impl ToolExecutionResult {
             ToolResultData::Text(text) => text.clone(),
             ToolResultData::Json(value) => serde_json::to_string_pretty(value).unwrap_or_default(),
             ToolResultData::FileReference { path, size, hash } => {
-                let hash_info = hash.as_ref().map(|h| format!(" (hash: {})", h)).unwrap_or_default();
+                let hash_info = hash
+                    .as_ref()
+                    .map(|h| format!(" (hash: {})", h))
+                    .unwrap_or_default();
                 format!("File reference: {} ({} bytes){}", path, size, hash_info)
             }
             ToolResultData::DirectoryListing(items) => {
-                format!("Directory listing ({} items):\n{}", 
+                format!(
+                    "Directory listing ({} items):\n{}",
                     items.len(),
-                    items.iter().map(|item| format!("  {}", item.display())).collect::<Vec<_>>().join("\n")
+                    items
+                        .iter()
+                        .map(|item| format!("  {}", item.display()))
+                        .collect::<Vec<_>>()
+                        .join("\n")
                 )
             }
-            ToolResultData::Binary { content_type, size, preview } => {
-                let preview_info = preview.as_ref().map(|p| format!(": {}", p)).unwrap_or_default();
-                format!("Binary data: {} ({} bytes){}", content_type, size, preview_info)
+            ToolResultData::Binary {
+                content_type,
+                size,
+                preview,
+            } => {
+                let preview_info = preview
+                    .as_ref()
+                    .map(|p| format!(": {}", p))
+                    .unwrap_or_default();
+                format!(
+                    "Binary data: {} ({} bytes){}",
+                    content_type, size, preview_info
+                )
             }
         }
     }
@@ -238,9 +263,17 @@ impl ToolExecutionStatus {
 pub enum ToolResultData {
     Text(String),
     Json(serde_json::Value),
-    FileReference { path: String, size: u64, hash: Option<String> },
+    FileReference {
+        path: String,
+        size: u64,
+        hash: Option<String>,
+    },
     DirectoryListing(Vec<FileItem>),
-    Binary { content_type: String, size: u64, preview: Option<String> },
+    Binary {
+        content_type: String,
+        size: u64,
+        preview: Option<String>,
+    },
 }
 
 impl ToolResultData {
@@ -280,7 +313,11 @@ impl ToolResultData {
         }
     }
 
-    pub fn binary_with_preview(content_type: impl Into<String>, size: u64, preview: String) -> Self {
+    pub fn binary_with_preview(
+        content_type: impl Into<String>,
+        size: u64,
+        preview: String,
+    ) -> Self {
         Self::Binary {
             content_type: content_type.into(),
             size,
@@ -332,11 +369,12 @@ impl FileItem {
             FileItemType::Symlink => "@",
             FileItemType::Unknown => "?",
         };
-        
-        let size_info = self.size
+
+        let size_info = self
+            .size
             .map(|s| format!(" ({} bytes)", s))
             .unwrap_or_default();
-            
+
         format!("{}{}{}", self.name, type_indicator, size_info)
     }
 }
@@ -418,7 +456,7 @@ pub enum FollowUpAction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StatusLevel {
     Info,
-    Warning,  
+    Warning,
     Error,
 }
 
@@ -455,7 +493,9 @@ impl ToolError {
             error_type: ToolErrorType::PermissionError,
             message: message.into(),
             details: None,
-            recovery_suggestions: vec!["Check file permissions or whitelist configuration".to_string()],
+            recovery_suggestions: vec![
+                "Check file permissions or whitelist configuration".to_string()
+            ],
         }
     }
 
@@ -497,7 +537,8 @@ impl From<ToolError> for ClaudeError {
             tool_name: "unknown".to_string(),
             message: tool_error.message,
             context: tool_error.details.map(|_details| {
-                ErrorContext::new("tool_execution").add_metadata("error_type", &format!("{:?}", tool_error.error_type))
+                ErrorContext::new("tool_execution")
+                    .add_metadata("error_type", &format!("{:?}", tool_error.error_type))
             }),
         }
     }
@@ -518,7 +559,7 @@ mod tests {
         let whitelist = create_test_whitelist();
         let input = serde_json::json!({"path": "test.txt"});
         let context = ToolExecutionContext::new("read_file".to_string(), input.clone(), whitelist);
-        
+
         assert_eq!(context.tool_name, "read_file");
         assert_eq!(context.input, input);
         assert!(context.execution_id.starts_with("exec_"));
@@ -532,7 +573,7 @@ mod tests {
         let input = serde_json::json!({});
         let mut context = ToolExecutionContext::new("test_tool".to_string(), input, whitelist)
             .with_max_retries(2);
-        
+
         assert!(context.can_retry());
         context.increment_retry();
         assert!(context.can_retry());
@@ -547,7 +588,7 @@ mod tests {
             "read_file".to_string(),
             ToolResultData::text("File contents"),
         );
-        
+
         assert!(result.is_success());
         assert!(!result.is_error());
         assert_eq!(result.tool_name, "read_file");
@@ -559,17 +600,17 @@ mod tests {
         let text_result = ToolResultData::text("Hello world");
         let json_result = ToolResultData::json(serde_json::json!({"key": "value"}));
         let file_result = ToolResultData::file_reference("/path/to/file", 1024);
-        
+
         match text_result {
             ToolResultData::Text(content) => assert_eq!(content, "Hello world"),
             _ => panic!("Expected text result"),
         }
-        
+
         match json_result {
             ToolResultData::Json(value) => assert_eq!(value["key"], "value"),
             _ => panic!("Expected JSON result"),
         }
-        
+
         match file_result {
             ToolResultData::FileReference { path, size, .. } => {
                 assert_eq!(path, "/path/to/file");
@@ -584,11 +625,11 @@ mod tests {
         let file_item = FileItem::new("test.txt".to_string(), FileItemType::File)
             .with_size(1024)
             .with_permissions("rw-r--r--".to_string());
-        
+
         assert_eq!(file_item.name, "test.txt");
         assert_eq!(file_item.size, Some(1024));
         assert!(file_item.permissions.is_some());
-        
+
         let display = file_item.display();
         assert!(display.contains("test.txt"));
         assert!(display.contains("1024 bytes"));
@@ -599,11 +640,11 @@ mod tests {
         let error = ToolError::validation_error("Invalid input parameter")
             .with_details("Parameter 'path' cannot be empty".to_string())
             .with_recovery_suggestion("Provide a valid file path".to_string());
-        
+
         assert_eq!(error.message, "Invalid input parameter");
         assert!(error.details.is_some());
         assert_eq!(error.recovery_suggestions.len(), 2); // Default + added
-        
+
         match error.error_type {
             ToolErrorType::ValidationError => (),
             _ => panic!("Expected validation error"),
@@ -617,20 +658,24 @@ mod tests {
             input: serde_json::json!({"path": "output.txt", "content": "data"}),
             depends_on: Some("exec_123".to_string()),
         };
-        
+
         let retry_action = FollowUpAction::RetryWithModifiedInput {
             modified_input: serde_json::json!({"timeout": 60}),
             delay: Some(Duration::from_secs(5)),
         };
-        
+
         match execute_action {
-            FollowUpAction::ExecuteTool { tool_name, depends_on, .. } => {
+            FollowUpAction::ExecuteTool {
+                tool_name,
+                depends_on,
+                ..
+            } => {
                 assert_eq!(tool_name, "write_file");
                 assert_eq!(depends_on, Some("exec_123".to_string()));
             }
             _ => panic!("Expected execute tool action"),
         }
-        
+
         match retry_action {
             FollowUpAction::RetryWithModifiedInput { delay, .. } => {
                 assert_eq!(delay, Some(Duration::from_secs(5)));
@@ -647,7 +692,7 @@ mod tests {
             ToolResultData::text("Simple text result"),
         );
         assert_eq!(text_result.into_content_block(), "Simple text result");
-        
+
         let json_result = ToolExecutionResult::success(
             "exec_456".to_string(),
             "test_tool".to_string(),
@@ -655,7 +700,7 @@ mod tests {
         );
         let content = json_result.into_content_block();
         assert!(content.contains("\"status\": \"ok\""));
-        
+
         let file_result = ToolExecutionResult::success(
             "exec_789".to_string(),
             "test_tool".to_string(),

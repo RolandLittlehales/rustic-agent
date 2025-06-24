@@ -1,6 +1,8 @@
 use crate::claude::{
     error::ClaudeResult,
-    tools::execution::{FollowUpAction, StatusLevel, ToolExecutionResult, ToolError, ToolErrorType},
+    tools::execution::{
+        FollowUpAction, StatusLevel, ToolError, ToolErrorType, ToolExecutionResult, ToolResultData,
+    },
 };
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -11,16 +13,23 @@ use tokio::sync::RwLock;
 #[async_trait]
 pub trait ToolFeedbackHandler: Send + Sync + std::fmt::Debug {
     /// Process a tool execution result and generate follow-up actions
-    async fn handle_result(&self, result: &ToolExecutionResult) -> ClaudeResult<Vec<FollowUpAction>>;
-    
+    async fn handle_result(
+        &self,
+        result: &ToolExecutionResult,
+    ) -> ClaudeResult<Vec<FollowUpAction>>;
+
     /// Handle tool execution errors and suggest recovery actions
-    async fn handle_error(&self, error: &ToolError, execution_id: &str) -> ClaudeResult<Vec<FollowUpAction>>;
-    
+    async fn handle_error(
+        &self,
+        error: &ToolError,
+        execution_id: &str,
+    ) -> ClaudeResult<Vec<FollowUpAction>>;
+
     /// Get the priority of this feedback handler (higher numbers = higher priority)
     fn priority(&self) -> u32 {
         0
     }
-    
+
     /// Check if this handler can process the given tool result
     fn can_handle(&self, result: &ToolExecutionResult) -> bool;
 }
@@ -51,16 +60,20 @@ impl FeedbackManager {
     pub fn register_handler(&mut self, handler: Arc<dyn ToolFeedbackHandler>) {
         self.handlers.push(handler);
         // Sort by priority (highest first)
-        self.handlers.sort_by(|a, b| b.priority().cmp(&a.priority()));
+        self.handlers
+            .sort_by(|a, b| b.priority().cmp(&a.priority()));
     }
 
     /// Process a tool result through all applicable handlers
-    pub async fn process_result(&self, result: &ToolExecutionResult) -> ClaudeResult<Vec<FollowUpAction>> {
+    pub async fn process_result(
+        &self,
+        result: &ToolExecutionResult,
+    ) -> ClaudeResult<Vec<FollowUpAction>> {
         // Store result in history
         {
             let mut history = self.execution_history.write().await;
             history.push(result.clone());
-            
+
             // Limit history size to prevent memory issues
             let max_size = self.feedback_rules.max_history_size;
             if history.len() > max_size {
@@ -91,7 +104,11 @@ impl FeedbackManager {
     }
 
     /// Process an error through all handlers
-    pub async fn process_error(&self, error: &ToolError, execution_id: &str) -> ClaudeResult<Vec<FollowUpAction>> {
+    pub async fn process_error(
+        &self,
+        error: &ToolError,
+        execution_id: &str,
+    ) -> ClaudeResult<Vec<FollowUpAction>> {
         let mut all_actions = Vec::new();
 
         for handler in &self.handlers {
@@ -119,7 +136,11 @@ impl FeedbackManager {
     }
 
     /// Apply feedback rules to filter and organize actions
-    fn apply_feedback_rules(&self, actions: Vec<FollowUpAction>, result: &ToolExecutionResult) -> Vec<FollowUpAction> {
+    fn apply_feedback_rules(
+        &self,
+        actions: Vec<FollowUpAction>,
+        result: &ToolExecutionResult,
+    ) -> Vec<FollowUpAction> {
         let mut filtered_actions = actions;
 
         // Limit total actions
@@ -129,9 +150,7 @@ impl FeedbackManager {
 
         // Filter based on result type
         if result.is_error() && !self.feedback_rules.allow_actions_on_error {
-            filtered_actions.retain(|action| {
-                matches!(action, FollowUpAction::ReportStatus { .. })
-            });
+            filtered_actions.retain(|action| matches!(action, FollowUpAction::ReportStatus { .. }));
         }
 
         // Sort actions by priority (highest priority first)
@@ -198,8 +217,9 @@ impl DefaultFeedbackHandler {
     }
 
     fn initialize_default_patterns(&mut self) {
-        // File operation patterns
-        let file_patterns = vec![
+        // Enhanced file read patterns with intelligent analysis
+        let read_file_patterns = vec![
+            // No generic success pattern - we provide actual analysis instead
             FeedbackPattern {
                 condition: PatternCondition::SuccessWithWarnings,
                 action_template: FollowUpAction::ReportStatus {
@@ -220,9 +240,34 @@ impl DefaultFeedbackHandler {
             },
         ];
 
-        self.tool_patterns.insert("read_file".to_string(), file_patterns.clone());
-        self.tool_patterns.insert("write_file".to_string(), file_patterns.clone());
-        self.tool_patterns.insert("list_directory".to_string(), file_patterns);
+        // Basic file operation patterns for write and list
+        let basic_file_patterns = vec![
+            FeedbackPattern {
+                condition: PatternCondition::SuccessWithWarnings,
+                action_template: FollowUpAction::ReportStatus {
+                    message: "File operation completed with warnings".to_string(),
+                    level: StatusLevel::Warning,
+                },
+            },
+            FeedbackPattern {
+                condition: PatternCondition::Error(ToolErrorType::PermissionError),
+                action_template: FollowUpAction::RequestUserInput {
+                    prompt: "File permission error occurred. Please check file permissions or update whitelist.".to_string(),
+                    suggested_actions: vec![
+                        "Check file permissions".to_string(),
+                        "Update whitelist configuration".to_string(),
+                        "Try with different file path".to_string(),
+                    ],
+                },
+            },
+        ];
+
+        self.tool_patterns
+            .insert("read_file".to_string(), read_file_patterns);
+        self.tool_patterns
+            .insert("write_file".to_string(), basic_file_patterns.clone());
+        self.tool_patterns
+            .insert("list_directory".to_string(), basic_file_patterns);
 
         // Add more patterns for other tools as needed
     }
@@ -230,11 +275,66 @@ impl DefaultFeedbackHandler {
     fn find_matching_patterns(&self, result: &ToolExecutionResult) -> Vec<&FeedbackPattern> {
         let patterns = self.tool_patterns.get(&result.tool_name);
         if let Some(patterns) = patterns {
-            patterns.iter()
+            patterns
+                .iter()
                 .filter(|pattern| pattern.matches(result))
                 .collect()
         } else {
             Vec::new()
+        }
+    }
+
+    fn generate_basic_file_context(&self, result: &ToolExecutionResult) -> Vec<FollowUpAction> {
+        let mut actions = Vec::new();
+
+        // Provide basic file context for Claude to reason about
+        if let ToolResultData::Text(content) = &result.result {
+            let context = self.generate_file_context(content, result);
+            for context_item in context {
+                actions.push(FollowUpAction::ReportStatus {
+                    message: context_item,
+                    level: StatusLevel::Info,
+                });
+            }
+        }
+
+        actions
+    }
+
+    fn generate_file_context(&self, content: &str, result: &ToolExecutionResult) -> Vec<String> {
+        let mut insights = Vec::new();
+
+        // Basic file metadata only - let Claude do the intelligent analysis
+        let size = content.len();
+        let line_count = content.lines().count();
+
+        // Simple file stats for context
+        insights.push(format!("File: {} chars, {} lines", size, line_count));
+
+        // Basic file type for context
+        if let Some(file_type) = self.detect_file_type(content, &result.tool_name) {
+            insights.push(format!("Type: {}", file_type));
+        }
+
+        // Basic execution info
+        insights.push(format!(
+            "Read in {} ms",
+            result.metadata.execution_time.as_millis()
+        ));
+
+        insights
+    }
+
+    fn detect_file_type(&self, content: &str, _tool_name: &str) -> Option<String> {
+        // Basic file type detection - let Claude interpret the specifics
+        if content.contains("fn ") || content.contains("use ") {
+            Some("Rust".to_string())
+        } else if content.trim_start().starts_with('{') || content.trim_start().starts_with('[') {
+            Some("JSON".to_string())
+        } else if content.contains("<html") || content.contains("<!DOCTYPE") {
+            Some("HTML".to_string())
+        } else {
+            Some("Text".to_string())
         }
     }
 }
@@ -247,13 +347,21 @@ impl Default for DefaultFeedbackHandler {
 
 #[async_trait]
 impl ToolFeedbackHandler for DefaultFeedbackHandler {
-    async fn handle_result(&self, result: &ToolExecutionResult) -> ClaudeResult<Vec<FollowUpAction>> {
+    async fn handle_result(
+        &self,
+        result: &ToolExecutionResult,
+    ) -> ClaudeResult<Vec<FollowUpAction>> {
         let matching_patterns = self.find_matching_patterns(result);
         let mut actions = Vec::new();
 
         for pattern in matching_patterns {
             let action = pattern.generate_action(result);
             actions.push(action);
+        }
+
+        // Basic file context for successful file reads - let Claude do the intelligent analysis
+        if actions.is_empty() && result.is_success() && result.tool_name == "read_file" {
+            actions.extend(self.generate_basic_file_context(result));
         }
 
         // Add default success reporting if no other actions
@@ -267,7 +375,11 @@ impl ToolFeedbackHandler for DefaultFeedbackHandler {
         Ok(actions)
     }
 
-    async fn handle_error(&self, error: &ToolError, _execution_id: &str) -> ClaudeResult<Vec<FollowUpAction>> {
+    async fn handle_error(
+        &self,
+        error: &ToolError,
+        _execution_id: &str,
+    ) -> ClaudeResult<Vec<FollowUpAction>> {
         let mut actions = Vec::new();
 
         // Generate recovery actions based on error type
@@ -351,7 +463,9 @@ impl PatternCondition {
     pub fn matches(&self, result: &ToolExecutionResult) -> bool {
         match self {
             PatternCondition::Success => result.is_success() && !self.has_warnings(result),
-            PatternCondition::SuccessWithWarnings => result.is_success() && self.has_warnings(result),
+            PatternCondition::SuccessWithWarnings => {
+                result.is_success() && self.has_warnings(result)
+            }
             PatternCondition::Error(error_type) => {
                 if let Some(error_context) = &result.error_context {
                     // Simple pattern matching - in practice this would be more sophisticated
@@ -362,21 +476,26 @@ impl PatternCondition {
                 }
             }
             PatternCondition::AnyError => result.is_error(),
-            PatternCondition::Timeout => matches!(result.status, crate::claude::tools::execution::ToolExecutionStatus::Timeout),
+            PatternCondition::Timeout => matches!(
+                result.status,
+                crate::claude::tools::execution::ToolExecutionStatus::Timeout
+            ),
             PatternCondition::Custom(_) => false, // Not implemented yet
         }
     }
 
     fn has_warnings(&self, result: &ToolExecutionResult) -> bool {
         match &result.status {
-            crate::claude::tools::execution::ToolExecutionStatus::PartialSuccess { warnings } => !warnings.is_empty(),
+            crate::claude::tools::execution::ToolExecutionStatus::PartialSuccess { warnings } => {
+                !warnings.is_empty()
+            }
             _ => !result.metadata.warnings.is_empty(),
         }
     }
 }
 
 /// Smart feedback handler that learns from execution patterns
-#[derive(Debug)]  
+#[derive(Debug)]
 pub struct SmartFeedbackHandler {
     execution_patterns: Arc<RwLock<HashMap<String, ExecutionPattern>>>,
     learning_enabled: bool,
@@ -401,9 +520,10 @@ impl SmartFeedbackHandler {
         }
 
         let mut patterns = self.execution_patterns.write().await;
-        let pattern = patterns.entry(result.tool_name.clone())
+        let pattern = patterns
+            .entry(result.tool_name.clone())
             .or_insert_with(|| ExecutionPattern::new(result.tool_name.clone()));
-        
+
         pattern.add_execution(result);
     }
 
@@ -419,7 +539,10 @@ impl SmartFeedbackHandler {
 
 #[async_trait]
 impl ToolFeedbackHandler for SmartFeedbackHandler {
-    async fn handle_result(&self, result: &ToolExecutionResult) -> ClaudeResult<Vec<FollowUpAction>> {
+    async fn handle_result(
+        &self,
+        result: &ToolExecutionResult,
+    ) -> ClaudeResult<Vec<FollowUpAction>> {
         // Learn from this execution
         self.learn_from_result(result).await;
 
@@ -429,7 +552,11 @@ impl ToolFeedbackHandler for SmartFeedbackHandler {
         Ok(optimizations)
     }
 
-    async fn handle_error(&self, error: &ToolError, _execution_id: &str) -> ClaudeResult<Vec<FollowUpAction>> {
+    async fn handle_error(
+        &self,
+        error: &ToolError,
+        _execution_id: &str,
+    ) -> ClaudeResult<Vec<FollowUpAction>> {
         // For now, provide basic error handling
         Ok(vec![FollowUpAction::ReportStatus {
             message: format!("Smart handler detected error: {}", error.message),
@@ -475,7 +602,7 @@ impl ExecutionPattern {
 
     fn add_execution(&mut self, result: &ToolExecutionResult) {
         self.execution_count += 1;
-        
+
         // Update average execution time
         let new_time = result.metadata.execution_time;
         let total_time = self.average_execution_time * (self.execution_count - 1) + new_time;
@@ -490,7 +617,8 @@ impl ExecutionPattern {
 
         // Update success rate
         let success_count = if result.is_success() { 1.0 } else { 0.0 };
-        self.success_rate = (self.success_rate * (self.execution_count - 1) as f64 + success_count) / self.execution_count as f64;
+        self.success_rate = (self.success_rate * (self.execution_count - 1) as f64 + success_count)
+            / self.execution_count as f64;
     }
 
     fn suggest_optimizations(&self, result: &ToolExecutionResult) -> Vec<FollowUpAction> {
@@ -499,7 +627,10 @@ impl ExecutionPattern {
         // Suggest timeout adjustments if execution time is consistently high
         if result.metadata.execution_time > self.average_execution_time * 2 {
             suggestions.push(FollowUpAction::ReportStatus {
-                message: format!("Tool '{}' took longer than average. Consider optimizing.", self.tool_name),
+                message: format!(
+                    "Tool '{}' took longer than average. Consider optimizing.",
+                    self.tool_name
+                ),
                 level: StatusLevel::Info,
             });
         }
@@ -535,9 +666,11 @@ mod tests {
 
         let actions = manager.process_result(&result).await.unwrap();
         assert!(!actions.is_empty());
-        
+
         // Should have at least a status report
-        assert!(actions.iter().any(|action| matches!(action, FollowUpAction::ReportStatus { .. })));
+        assert!(actions
+            .iter()
+            .any(|action| matches!(action, FollowUpAction::ReportStatus { .. })));
     }
 
     #[tokio::test]
@@ -571,7 +704,7 @@ mod tests {
     #[tokio::test]
     async fn test_smart_feedback_handler() {
         let handler = SmartFeedbackHandler::new();
-        
+
         let result = ToolExecutionResult::success(
             "exec_123".to_string(),
             "test_tool".to_string(),
@@ -593,14 +726,23 @@ mod tests {
         );
 
         let actions = vec![
-            FollowUpAction::ReportStatus { message: "Status 1".to_string(), level: StatusLevel::Info },
-            FollowUpAction::ReportStatus { message: "Status 2".to_string(), level: StatusLevel::Warning },
-            FollowUpAction::ReportStatus { message: "Status 3".to_string(), level: StatusLevel::Error },
+            FollowUpAction::ReportStatus {
+                message: "Status 1".to_string(),
+                level: StatusLevel::Info,
+            },
+            FollowUpAction::ReportStatus {
+                message: "Status 2".to_string(),
+                level: StatusLevel::Warning,
+            },
+            FollowUpAction::ReportStatus {
+                message: "Status 3".to_string(),
+                level: StatusLevel::Error,
+            },
         ];
 
         let filtered = manager.apply_feedback_rules(actions, &result);
         assert_eq!(filtered.len(), 3);
-        
+
         // Should be sorted by priority (Error first)
         if let FollowUpAction::ReportStatus { level, .. } = &filtered[0] {
             assert!(matches!(level, StatusLevel::Error));
@@ -610,13 +752,13 @@ mod tests {
     #[test]
     fn test_execution_pattern_learning() {
         let mut pattern = ExecutionPattern::new("test_tool".to_string());
-        
+
         let result1 = ToolExecutionResult::success(
             "exec_1".to_string(),
             "test_tool".to_string(),
             ToolResultData::text("result"),
         );
-        
+
         pattern.add_execution(&result1);
         assert_eq!(pattern.execution_count, 1);
         assert!(pattern.success_rate > 0.9);
@@ -627,7 +769,7 @@ mod tests {
             ToolError::validation_error("Test error"),
             true,
         );
-        
+
         pattern.add_execution(&result2);
         assert_eq!(pattern.execution_count, 2);
         assert!(pattern.success_rate < 0.9); // Should decrease due to failure

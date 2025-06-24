@@ -12,20 +12,20 @@ use tokio::sync::RwLock;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RecoveryAction {
     /// Retry the operation with specified delay and max attempts
-    Retry { 
-        delay: Duration, 
+    Retry {
+        delay: Duration,
         max_attempts: u32,
         modified_input: Option<serde_json::Value>,
     },
     /// Use a fallback tool with different input
-    FallbackTool { 
-        tool_name: String, 
+    FallbackTool {
+        tool_name: String,
         input: serde_json::Value,
         reason: String,
     },
     /// Request user intervention with suggested actions
-    UserIntervention { 
-        message: String, 
+    UserIntervention {
+        message: String,
         suggested_actions: Vec<String>,
         blocking: bool,
     },
@@ -50,12 +50,19 @@ pub enum RecoveryAction {
 impl RecoveryAction {
     /// Check if this recovery action requires user interaction
     pub fn requires_user_interaction(&self) -> bool {
-        matches!(self, RecoveryAction::UserIntervention { blocking: true, .. })
+        matches!(
+            self,
+            RecoveryAction::UserIntervention { blocking: true, .. }
+        )
     }
 
     /// Check if this recovery action stops the execution chain
     pub fn stops_execution(&self) -> bool {
-        matches!(self, RecoveryAction::AbortChain { .. } | RecoveryAction::UserIntervention { blocking: true, .. })
+        matches!(
+            self,
+            RecoveryAction::AbortChain { .. }
+                | RecoveryAction::UserIntervention { blocking: true, .. }
+        )
     }
 
     /// Get the estimated delay before this action can be executed
@@ -81,18 +88,11 @@ pub enum FixAction {
         reason: String,
     },
     /// Increase timeout
-    IncreaseTimeout {
-        new_timeout: Duration,
-    },
+    IncreaseTimeout { new_timeout: Duration },
     /// Change file permissions (if applicable)
-    ChangePermissions {
-        path: String,
-        permissions: String,
-    },
+    ChangePermissions { path: String, permissions: String },
     /// Create missing directory
-    CreateDirectory {
-        path: String,
-    },
+    CreateDirectory { path: String },
     /// Custom fix action (for extensibility)
     Custom {
         description: String,
@@ -149,7 +149,8 @@ impl ToolRecoveryManager {
     pub fn register_strategy(&mut self, strategy: Arc<dyn RecoveryStrategy>) {
         self.strategies.push(strategy);
         // Sort by priority (highest first)
-        self.strategies.sort_by(|a, b| b.priority().cmp(&a.priority()));
+        self.strategies
+            .sort_by(|a, b| b.priority().cmp(&a.priority()));
     }
 
     /// Suggest recovery actions for a failed tool execution
@@ -163,8 +164,14 @@ impl ToolRecoveryManager {
         // Check if we've exceeded max recovery attempts
         if attempt_count >= self.config.max_recovery_attempts {
             return Ok(vec![RecoveryAction::AbortChain {
-                reason: format!("Exceeded maximum recovery attempts ({})", self.config.max_recovery_attempts),
-                cleanup_actions: vec!["Review error logs".to_string(), "Check system configuration".to_string()],
+                reason: format!(
+                    "Exceeded maximum recovery attempts ({})",
+                    self.config.max_recovery_attempts
+                ),
+                cleanup_actions: vec![
+                    "Review error logs".to_string(),
+                    "Check system configuration".to_string(),
+                ],
             }]);
         }
 
@@ -173,12 +180,19 @@ impl ToolRecoveryManager {
         // Get suggestions from all applicable strategies
         for strategy in &self.strategies {
             if strategy.can_handle(error) {
-                match strategy.suggest_recovery(error, context, attempt_count).await {
+                match strategy
+                    .suggest_recovery(error, context, attempt_count)
+                    .await
+                {
                     Ok(mut actions) => {
                         all_actions.append(&mut actions);
                     }
                     Err(e) => {
-                        eprintln!("Warning: Recovery strategy '{}' failed: {}", strategy.name(), e);
+                        eprintln!(
+                            "Warning: Recovery strategy '{}' failed: {}",
+                            strategy.name(),
+                            e
+                        );
                     }
                 }
             }
@@ -188,7 +202,8 @@ impl ToolRecoveryManager {
         let filtered_actions = self.apply_recovery_rules(all_actions, error, attempt_count);
 
         // Record this recovery attempt
-        self.record_recovery_attempt(&context.execution_id, error, &filtered_actions).await;
+        self.record_recovery_attempt(&context.execution_id, error, &filtered_actions)
+            .await;
 
         Ok(filtered_actions)
     }
@@ -200,7 +215,11 @@ impl ToolRecoveryManager {
         context: &ToolExecutionContext,
     ) -> ClaudeResult<RecoveryResult> {
         match action {
-            RecoveryAction::Retry { delay, modified_input, .. } => {
+            RecoveryAction::Retry {
+                delay,
+                modified_input,
+                ..
+            } => {
                 tokio::time::sleep(*delay).await;
                 Ok(RecoveryResult::Retry {
                     modified_context: if let Some(input) = modified_input {
@@ -212,41 +231,52 @@ impl ToolRecoveryManager {
                     },
                 })
             }
-            RecoveryAction::FallbackTool { tool_name, input, reason } => {
-                Ok(RecoveryResult::FallbackTool {
-                    tool_name: tool_name.clone(),
-                    input: input.clone(),
-                    reason: reason.clone(),
-                })
-            }
-            RecoveryAction::FixAndRetry { fix_actions, retry_delay, .. } => {
+            RecoveryAction::FallbackTool {
+                tool_name,
+                input,
+                reason,
+            } => Ok(RecoveryResult::FallbackTool {
+                tool_name: tool_name.clone(),
+                input: input.clone(),
+                reason: reason.clone(),
+            }),
+            RecoveryAction::FixAndRetry {
+                fix_actions,
+                retry_delay,
+                ..
+            } => {
                 // Execute fix actions
                 for fix_action in fix_actions {
                     if let Err(e) = self.execute_fix_action(fix_action, context).await {
                         eprintln!("Warning: Fix action failed: {}", e);
                     }
                 }
-                
+
                 tokio::time::sleep(*retry_delay).await;
-                Ok(RecoveryResult::Retry { modified_context: None })
-            }
-            RecoveryAction::UserIntervention { message, suggested_actions, .. } => {
-                Ok(RecoveryResult::UserIntervention {
-                    message: message.clone(),
-                    suggested_actions: suggested_actions.clone(),
+                Ok(RecoveryResult::Retry {
+                    modified_context: None,
                 })
             }
-            RecoveryAction::SkipAndContinue { reason, .. } => {
-                Ok(RecoveryResult::Skip {
-                    reason: reason.clone(),
-                })
-            }
-            RecoveryAction::AbortChain { reason, cleanup_actions } => {
+            RecoveryAction::UserIntervention {
+                message,
+                suggested_actions,
+                ..
+            } => Ok(RecoveryResult::UserIntervention {
+                message: message.clone(),
+                suggested_actions: suggested_actions.clone(),
+            }),
+            RecoveryAction::SkipAndContinue { reason, .. } => Ok(RecoveryResult::Skip {
+                reason: reason.clone(),
+            }),
+            RecoveryAction::AbortChain {
+                reason,
+                cleanup_actions,
+            } => {
                 // Execute cleanup actions
                 for cleanup_action in cleanup_actions {
                     eprintln!("Cleanup: {}", cleanup_action);
                 }
-                
+
                 Ok(RecoveryResult::Abort {
                     reason: reason.clone(),
                 })
@@ -260,8 +290,15 @@ impl ToolRecoveryManager {
         _context: &ToolExecutionContext,
     ) -> ClaudeResult<()> {
         match fix_action {
-            FixAction::ModifyInput { parameter, new_value, reason } => {
-                eprintln!("Fix: Modifying input parameter '{}' to {:?} ({})", parameter, new_value, reason);
+            FixAction::ModifyInput {
+                parameter,
+                new_value,
+                reason,
+            } => {
+                eprintln!(
+                    "Fix: Modifying input parameter '{}' to {:?} ({})",
+                    parameter, new_value, reason
+                );
                 Ok(())
             }
             FixAction::IncreaseTimeout { new_timeout } => {
@@ -275,7 +312,10 @@ impl ToolRecoveryManager {
                 Ok(())
             }
             FixAction::ChangePermissions { path, permissions } => {
-                eprintln!("Fix: Changing permissions of '{}' to '{}'", path, permissions);
+                eprintln!(
+                    "Fix: Changing permissions of '{}' to '{}'",
+                    path, permissions
+                );
                 // In a real implementation, this would change file permissions
                 // with proper security validation
                 Ok(())
@@ -289,7 +329,8 @@ impl ToolRecoveryManager {
 
     async fn get_attempt_count(&self, execution_id: &str) -> u32 {
         let history = self.execution_history.read().await;
-        history.iter()
+        history
+            .iter()
             .filter(|attempt| attempt.execution_id == execution_id)
             .count() as u32
     }
@@ -338,10 +379,11 @@ impl ToolRecoveryManager {
         if attempt_count >= self.config.escalation_threshold {
             // Escalate to more drastic actions
             filtered_actions.retain(|action| {
-                matches!(action, 
-                    RecoveryAction::UserIntervention { .. } |
-                    RecoveryAction::AbortChain { .. } |
-                    RecoveryAction::FallbackTool { .. }
+                matches!(
+                    action,
+                    RecoveryAction::UserIntervention { .. }
+                        | RecoveryAction::AbortChain { .. }
+                        | RecoveryAction::FallbackTool { .. }
                 )
             });
         }
@@ -393,12 +435,12 @@ impl ToolRecoveryManager {
 impl Default for ToolRecoveryManager {
     fn default() -> Self {
         let mut manager = Self::new();
-        
+
         // Register default strategies
         manager.register_strategy(Arc::new(DefaultRecoveryStrategy::new()));
         manager.register_strategy(Arc::new(FileOperationRecoveryStrategy::new()));
         manager.register_strategy(Arc::new(TimeoutRecoveryStrategy::new()));
-        
+
         manager
     }
 }
@@ -428,11 +470,24 @@ impl Default for RecoveryConfig {
 /// Result of executing a recovery action
 #[derive(Debug, Clone)]
 pub enum RecoveryResult {
-    Retry { modified_context: Option<ToolExecutionContext> },
-    FallbackTool { tool_name: String, input: serde_json::Value, reason: String },
-    UserIntervention { message: String, suggested_actions: Vec<String> },
-    Skip { reason: String },
-    Abort { reason: String },
+    Retry {
+        modified_context: Option<ToolExecutionContext>,
+    },
+    FallbackTool {
+        tool_name: String,
+        input: serde_json::Value,
+        reason: String,
+    },
+    UserIntervention {
+        message: String,
+        suggested_actions: Vec<String>,
+    },
+    Skip {
+        reason: String,
+    },
+    Abort {
+        reason: String,
+    },
 }
 
 /// Record of a recovery attempt for analysis and learning
@@ -546,7 +601,9 @@ impl RecoveryStrategy for FileOperationRecoveryStrategy {
             }
             ToolErrorType::ValidationError => {
                 // Check if it's a missing directory issue
-                if error.message.contains("No such file or directory") || error.message.contains("not found") {
+                if error.message.contains("No such file or directory")
+                    || error.message.contains("not found")
+                {
                     if let Some(path) = context.input.get("path").and_then(|p| p.as_str()) {
                         if let Some(parent) = std::path::Path::new(path).parent() {
                             actions.push(RecoveryAction::FixAndRetry {
@@ -669,11 +726,12 @@ mod tests {
 
         let actions = manager.suggest_recovery(&error, &context).await.unwrap();
         assert!(!actions.is_empty());
-        
+
         // Should include at least a retry or user intervention
-        assert!(actions.iter().any(|action| 
-            matches!(action, RecoveryAction::Retry { .. } | RecoveryAction::UserIntervention { .. })
-        ));
+        assert!(actions.iter().any(|action| matches!(
+            action,
+            RecoveryAction::Retry { .. } | RecoveryAction::UserIntervention { .. }
+        )));
     }
 
     #[tokio::test]
@@ -687,13 +745,16 @@ mod tests {
         };
         let context = create_test_context();
 
-        let actions = strategy.suggest_recovery(&permission_error, &context, 0).await.unwrap();
+        let actions = strategy
+            .suggest_recovery(&permission_error, &context, 0)
+            .await
+            .unwrap();
         assert!(!actions.is_empty());
-        
+
         // Should suggest user intervention for permission errors
-        assert!(actions.iter().any(|action| 
-            matches!(action, RecoveryAction::UserIntervention { .. })
-        ));
+        assert!(actions
+            .iter()
+            .any(|action| matches!(action, RecoveryAction::UserIntervention { .. })));
     }
 
     #[tokio::test]
@@ -707,13 +768,16 @@ mod tests {
         };
         let context = create_test_context();
 
-        let actions = strategy.suggest_recovery(&timeout_error, &context, 0).await.unwrap();
+        let actions = strategy
+            .suggest_recovery(&timeout_error, &context, 0)
+            .await
+            .unwrap();
         assert!(!actions.is_empty());
-        
+
         // Should suggest fix and retry for timeout errors
-        assert!(actions.iter().any(|action| 
-            matches!(action, RecoveryAction::FixAndRetry { .. })
-        ));
+        assert!(actions
+            .iter()
+            .any(|action| matches!(action, RecoveryAction::FixAndRetry { .. })));
     }
 
     #[tokio::test]
@@ -727,8 +791,11 @@ mod tests {
             modified_input: None,
         };
 
-        let result = manager.execute_recovery_action(&retry_action, &context).await.unwrap();
-        
+        let result = manager
+            .execute_recovery_action(&retry_action, &context)
+            .await
+            .unwrap();
+
         match result {
             RecoveryResult::Retry { .. } => (),
             _ => panic!("Expected retry result"),
@@ -792,14 +859,16 @@ mod tests {
 
         // Record multiple attempts
         for _ in 0..3 {
-            manager.record_recovery_attempt(&context.execution_id, &error, &[]).await;
+            manager
+                .record_recovery_attempt(&context.execution_id, &error, &[])
+                .await;
         }
 
         let actions = manager.suggest_recovery(&error, &context).await.unwrap();
-        
+
         // Should suggest abort due to too many attempts
-        assert!(actions.iter().any(|action| 
-            matches!(action, RecoveryAction::AbortChain { .. })
-        ));
+        assert!(actions
+            .iter()
+            .any(|action| matches!(action, RecoveryAction::AbortChain { .. })));
     }
 }
