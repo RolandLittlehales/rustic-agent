@@ -8,17 +8,18 @@ This command automates ticket selection for **simple development work** like bug
 
 ## 🔄 Process
 
-1. **Check Sequencing**: Review implementation-sequence.md or project documentation for ticket ordering
+1. **Check GitHub Issues**: Get all open issues and check assignment status (assigned = in progress)
 2. **Filter for Simple Work**: 
-   - Bug fixes and small enhancements
+   - Bug fixes and small enhancements (<100 LOC)
    - Maintenance tasks and code cleanup
-   - Configuration updates
-   - Documentation fixes
-   - Quick security patches
-3. **Dependency Validation**: Find first unassigned ticket without blocking dependencies
-4. **GitHub Assignment**: Assign selected ticket to self on GitHub
-5. **User Confirmation**: Present selected ticket and wait for confirmation
-6. **Workflow Trigger**: If confirmed, automatically execute `/work-on-ticket` workflow
+   - Configuration updates and tweaks
+   - Documentation fixes and improvements
+   - Quick security patches (non-architectural)
+3. **Apply Sequencing Logic**: Prefer lower-numbered issues but allow flexibility for simple work
+4. **Dependency Validation**: Skip tickets blocked by major features or complex dependencies
+5. **GitHub Assignment**: Assign selected ticket to self on GitHub
+6. **User Confirmation**: Present selected ticket and wait for confirmation
+7. **Workflow Trigger**: If confirmed, automatically execute `/work-on-ticket` workflow
 
 ## ✅ Selection Criteria
 
@@ -97,20 +98,37 @@ If you confirm the selection, the command automatically:
 🚀 /work-on-ticket execution
 ```
 
-## ⚙️ Configuration
+## ⚙️ Selection Algorithm
 
-The command considers these factors when selecting tickets:
+### **Flexible Sequencing for Simple Work**
+1. **GitHub Status Check**: `gh issue list --state open --json number,title,assignees`
+2. **Simple Work Filter**: Focus on maintenance, bugs, small improvements
+3. **Assignment Filter**: Skip any issues with assignees (they're in progress)
+4. **Dependency Check**: Avoid tickets blocked by major incomplete features
+5. **Preference Logic**: Lower-numbered tickets preferred but not strict requirement
 
-### **Priority Scoring**
-- **Age**: Older tickets get higher priority
-- **Impact**: User-facing issues prioritized
-- **Complexity**: Simpler tickets preferred for this workflow
-- **Dependencies**: Tickets without blockers preferred
+### **Key Differences from /pick-next-feature**
+- **Flexible sequencing**: Can work on simple tickets out of strict order
+- **Scope-based filtering**: <100 LOC, maintenance, non-architectural
+- **Dependency awareness**: Avoid major feature dependencies but allow simple prerequisites
+- **Speed optimization**: Select work that can be completed quickly
 
-### **Project Integration**
-- Reads from `implementation-sequence.md` if available
-- Considers GitHub project boards and milestones
-- Respects issue labels for filtering
+### **Example Decision Process**
+```
+🎯 Simple Work Available:
+- Issue #4: Theming (simple CSS/UI work) ✅ Available
+- Issue #5: Solid.js integration (architectural) ❌ Too complex
+- Issue #25: Fix console logging (bug fix) ✅ Available  
+- Issue #26: Update README (documentation) ✅ Available
+
+🎯 Selection: #4 (lowest number) or #25 (bug priority)
+```
+
+### **Priority Factors**
+- **Simplicity**: <100 LOC, single-file changes preferred
+- **Independence**: Minimal dependencies on incomplete major features
+- **User Impact**: Bug fixes and UX improvements prioritized
+- **Sequence Awareness**: Prefer lower-numbered issues when all else equal
 
 ## 🔗 Related Commands
 

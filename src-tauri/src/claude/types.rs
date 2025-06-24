@@ -32,6 +32,8 @@ pub enum ContentBlock {
         tool_use_id: String,
         content: String,
         is_error: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        metadata: Option<crate::claude::tools::ToolResultMetadata>,
     },
     // Future-ready for streaming
     Thinking {
@@ -67,6 +69,21 @@ impl ContentBlock {
             tool_use_id: tool_use_id.into(),
             content: content.into(),
             is_error,
+            metadata: None,
+        }
+    }
+
+    pub fn tool_result_with_metadata(
+        tool_use_id: impl Into<String>,
+        content: impl Into<String>,
+        is_error: Option<bool>,
+        metadata: crate::claude::tools::ToolResultMetadata,
+    ) -> Self {
+        Self::ToolResult {
+            tool_use_id: tool_use_id.into(),
+            content: content.into(),
+            is_error,
+            metadata: Some(metadata),
         }
     }
 

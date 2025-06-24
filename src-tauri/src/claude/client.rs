@@ -1,7 +1,7 @@
 use crate::claude::{
     error::{ClaudeError, ClaudeResult, ErrorContext, ErrorHandler},
     message_processor::MessageProcessor,
-    tools::{AgentTool, ToolRegistry},
+    tools::{AgentTool, ToolExecutionContext, ToolExecutionEngine, ToolRegistry},
     types::*,
     whitelist::WhitelistConfig,
     ClaudeConfig, Conversation,
@@ -16,9 +16,11 @@ pub struct ClaudeClient {
     config: ClaudeConfig,
     http_client: Client,
     tool_registry: ToolRegistry,
+    tool_execution_engine: ToolExecutionEngine,
     message_processor: MessageProcessor,
     error_handler: ErrorHandler,
     last_request: Mutex<Option<Instant>>,
+    whitelist: Option<Arc<RwLock<WhitelistConfig>>>,
 }
 
 impl ClaudeClient {
@@ -39,13 +41,27 @@ impl ClaudeClient {
         tool_registry.register(crate::claude::tools::WriteFileTool::new());
         tool_registry.register(crate::claude::tools::ListDirectoryTool::new());
 
+        // Initialize enhanced tool execution engine
+        let mut tool_execution_engine = ToolExecutionEngine::new();
+
+        // Register tools with both registry and execution engine
+        let read_tool = Arc::new(crate::claude::tools::ReadFileTool::new());
+        let write_tool = Arc::new(crate::claude::tools::WriteFileTool::new());
+        let list_tool = Arc::new(crate::claude::tools::ListDirectoryTool::new());
+
+        tool_execution_engine.register_tool(read_tool.clone());
+        tool_execution_engine.register_tool(write_tool.clone());
+        tool_execution_engine.register_tool(list_tool.clone());
+
         Ok(Self {
             config,
             http_client,
             tool_registry,
+            tool_execution_engine,
             message_processor: MessageProcessor::new(),
             error_handler: ErrorHandler::new(),
             last_request: Mutex::new(None),
+            whitelist: None,
         })
     }
 
@@ -58,7 +74,8 @@ impl ClaudeClient {
     #[allow(dead_code)]
     pub fn set_whitelist(&mut self, whitelist: Arc<RwLock<WhitelistConfig>>) {
         self.tool_registry.set_whitelist(whitelist.clone());
-        self.message_processor.set_whitelist(whitelist);
+        self.message_processor.set_whitelist(whitelist.clone());
+        self.whitelist = Some(whitelist);
     }
 
     pub async fn send_message(
@@ -154,45 +171,150 @@ impl ClaudeClient {
     }
 
     async fn process_response(&self, response: ClaudeResponse) -> ClaudeResult<String> {
-        let mut result_parts = Vec::new();
+        self.process_response_with_tools(response).await
+    }
+
+    /// Enhanced response processing with structured tool execution
+    async fn process_response_with_tools(&self, response: ClaudeResponse) -> ClaudeResult<String> {
+        // Check if the response contains tool uses that need to be executed
+        let mut has_tool_uses = false;
+        let mut tool_result_blocks = Vec::new();
 
         for content_block in &response.content {
-            match content_block {
-                ContentBlock::Text { text } => {
-                    result_parts.push(text.clone());
-                }
-                ContentBlock::ToolUse { id: _, name, input } => {
-                    // Validate tool use first
-                    if let Err(e) = self
-                        .message_processor
-                        .validate_tool_use(content_block)
-                        .await
-                    {
-                        result_parts.push(format!("Tool '{}' validation error: {}", name, e));
-                        continue;
-                    }
+            if let ContentBlock::ToolUse { id, name, input } = content_block {
+                has_tool_uses = true;
 
-                    match self.tool_registry.execute_tool(name, input.clone()).await {
-                        Ok(tool_result) => {
-                            result_parts.push(format!("Tool '{}' result: {}", name, tool_result));
-                        }
-                        Err(e) => {
-                            let error_msg = format!("Tool '{}' error: {}", name, e);
-                            result_parts.push(error_msg);
-                        }
+                // Validate tool use first
+                if let Err(e) = self
+                    .message_processor
+                    .validate_tool_use(content_block)
+                    .await
+                {
+                    // Create error tool result
+                    tool_result_blocks.push(ContentBlock::ToolResult {
+                        tool_use_id: id.clone(),
+                        content: format!("Tool validation error: {}", e),
+                        is_error: Some(true),
+                        metadata: None,
+                    });
+                    continue;
+                }
+
+                // Create execution context
+                let whitelist = self
+                    .whitelist
+                    .clone()
+                    .unwrap_or_else(|| Arc::new(RwLock::new(WhitelistConfig::default())));
+
+                let context = ToolExecutionContext::new(name.clone(), input.clone(), whitelist)
+                    .with_timeout(Duration::from_secs(30))
+                    .with_max_retries(3);
+
+                // Execute tool using enhanced execution engine
+                let tool_request =
+                    crate::claude::tools::ToolRequest::new(name.clone(), input.clone());
+
+                match self
+                    .tool_execution_engine
+                    .execute_single_tool(tool_request, context)
+                    .await
+                {
+                    Ok(execution_result) => {
+                        // Create ToolResult content block with the tool execution result
+                        let tool_result_content = execution_result.into_content_block();
+
+                        tool_result_blocks.push(ContentBlock::ToolResult {
+                            tool_use_id: id.clone(),
+                            content: tool_result_content,
+                            is_error: Some(execution_result.is_error()),
+                            metadata: None,
+                        });
                     }
-                }
-                ContentBlock::ToolResult { .. } => {
-                    // Tool results in response shouldn't happen, but handle gracefully
-                }
-                ContentBlock::Thinking { content } => {
-                    // Thinking blocks can be processed or ignored based on configuration
-                    result_parts.push(format!("Thinking: {}", content));
+                    Err(e) => {
+                        // Create error tool result
+                        tool_result_blocks.push(ContentBlock::ToolResult {
+                            tool_use_id: id.clone(),
+                            content: format!("Tool execution failed: {}", e),
+                            is_error: Some(true),
+                            metadata: None,
+                        });
+                    }
                 }
             }
         }
 
-        Ok(result_parts.join("\n"))
+        // If there were tool uses, we need to send the results back to Claude for interpretation
+        if has_tool_uses {
+            // Create a new message with the original assistant response and tool results
+            let mut conversation_messages = Vec::new();
+
+            // Add the assistant's response with tool uses
+            conversation_messages.push(ClaudeMessage {
+                role: MessageRole::Assistant,
+                content: response.content.clone(),
+                thinking: None,
+            });
+
+            // Add the tool results as a user message
+            conversation_messages.push(ClaudeMessage {
+                role: MessageRole::User,
+                content: tool_result_blocks,
+                thinking: None,
+            });
+
+            // Get tools for the second request
+            let tools = self.tool_registry.get_all_tools();
+
+            let system_message = if self.config.supports_thinking() {
+                "You are a helpful AI assistant specialized in software development. You have access to various tools to help with file operations, code analysis, and development tasks. Feel free to use thinking mode to reason through complex problems."
+            } else {
+                "You are a helpful AI assistant specialized in software development. You have access to various tools to help with file operations, code analysis, and development tasks."
+            };
+
+            // Create second request to Claude with tool results
+            let second_request = ClaudeRequest {
+                model: self.config.model.clone(),
+                max_tokens: self.config.max_tokens,
+                temperature: self.config.temperature,
+                messages: conversation_messages,
+                tools: Some(tools),
+                system: Some(system_message.to_string()),
+            };
+
+            // Make the second API call to get Claude's interpretation
+            let second_response = self
+                .error_handler
+                .handle_with_retry(|| self.make_api_call(second_request.clone()))
+                .await?;
+
+            // Process the second response (should not have tool uses, but handle recursively if needed)
+            return Box::pin(self.process_response_with_tools(second_response)).await;
+        }
+
+        // No tool uses - just return the text content from Claude's response
+        let mut processed_content = Vec::new();
+        for content_block in &response.content {
+            match content_block {
+                ContentBlock::Text { text } => {
+                    processed_content.push(text.clone());
+                }
+                ContentBlock::Thinking { content } => {
+                    // Thinking blocks can be processed or ignored based on configuration
+                    if self.config.supports_thinking() {
+                        processed_content.push(format!("Thinking: {}", content));
+                    }
+                }
+                ContentBlock::ToolUse { .. } => {
+                    // This shouldn't happen as we handle tool uses above, but be defensive
+                    processed_content.push("Tool use encountered but not processed".to_string());
+                }
+                ContentBlock::ToolResult { .. } => {
+                    // Tool results shouldn't be in the final response to user
+                }
+            }
+        }
+
+        Ok(processed_content.join("\n"))
     }
 
     fn conversation_to_claude_messages(&self, conversation: &Conversation) -> Vec<ClaudeMessage> {

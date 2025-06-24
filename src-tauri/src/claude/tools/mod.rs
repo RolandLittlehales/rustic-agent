@@ -1,3 +1,28 @@
+//! Enhanced tool execution system with comprehensive result handling,
+//! feedback loops, error recovery, and tool chain management.
+//!
+//! This module provides a robust foundation for tool execution that goes beyond
+//! simple string-based results to provide structured data, comprehensive error
+//! handling, and intelligent recovery mechanisms.
+
+pub mod chain;
+pub mod execution;
+pub mod feedback;
+pub mod recovery;
+
+// Re-export main types for convenience
+pub use execution::{FollowUpAction, StatusLevel, ToolExecutionContext};
+
+// Reserved for future integration with Claude client
+pub use chain::{ToolExecutionEngine, ToolRequest};
+#[allow(unused_imports)]
+pub use execution::{ToolExecutionResult, ToolResultData, ToolResultMetadata};
+#[allow(unused_imports)]
+pub use feedback::FeedbackManager;
+#[allow(unused_imports)]
+pub use recovery::ToolRecoveryManager;
+
+// Re-export existing tool types for backward compatibility
 use crate::claude::types::{PropertySchema, Tool, ToolInputSchema};
 use crate::claude::whitelist::{validate_path, FileOperation, WhitelistConfig};
 use anyhow::Result;
