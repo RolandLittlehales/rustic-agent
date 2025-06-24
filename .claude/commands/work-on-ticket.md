@@ -58,6 +58,13 @@ This command provides an **efficient development workflow** for implementing spe
 ✅ Ticket exists and is accessible
 ✅ No blocking dependencies found
 ✅ Ticket currently unassigned
+
+🌿 Creating isolated work branch:
+$ git checkout main
+$ git pull origin main  
+$ git checkout -b ticket/12-fix-file-watcher-spam
+✅ Branch created: ticket/12-fix-file-watcher-spam
+
 📝 Assigning to current user...
 
 🔍 Quick Assessment:
@@ -83,6 +90,10 @@ This command provides an **efficient development workflow** for implementing spe
 ✅ Verify ticket exists in GitHub
 ✅ Check ticket status and assignability
 ✅ Analyze dependencies and blockers
+✅ Create new branch from main for isolated work:
+   • git checkout main
+   • git pull origin main
+   • git checkout -b ticket/{ticket-number}-{short-description}
 ✅ Assign ticket to current user
 ✅ Understand scope and requirements
 ```
