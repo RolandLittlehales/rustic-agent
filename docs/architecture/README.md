@@ -12,13 +12,21 @@ The Claude AI Agent is a Tauri v2-based desktop application that provides a secu
 
 - **[ContentBlock System](./content-block-system.md)** - Foundation for structured content handling, including text, tool use, tool results, and thinking blocks. This system enables type-safe message processing and tool interaction.
 
+- **[Error Handling System](./error-handling-system.md)** - Comprehensive error handling framework with `thiserror` integration, circuit breaker patterns, retry logic, and structured telemetry for robust failure management.
+
 ### API References
 
 - **[ContentBlock Types API](../api/content-block-types.md)** - Complete API reference for ContentBlock enum, ClaudeMessage structure, and error handling types.
 
+- **[Error Types API](../api/error-types.md)** - Comprehensive API reference for ClaudeError enum, ErrorContext, ErrorHandler, and telemetry systems with `thiserror` integration.
+
+- **[Model Registry API](../api/model-registry-types.md)** - API reference for ModelRegistry, ModelInfo, ModelSelectionCriteria, and intelligent model selection with fallback strategies.
+
 ### Integration Guides
 
 - **[Tool ContentBlock Integration](../tools/content-block-integration.md)** - Guide for implementing tools that work with the ContentBlock system.
+
+- **[Error Handling Integration](../tools/error-handling-integration.md)** - Comprehensive guide for integrating error handling, circuit breakers, model selection, and telemetry into application components.
 
 ## System Architecture Overview
 
@@ -47,12 +55,24 @@ The Claude AI Agent is a Tauri v2-based desktop application that provides a secu
    - Extensible message format
    - Tool integration framework
 
-4. **Security Layer**
+4. **Error Handling System**
+   - Comprehensive error taxonomy with `thiserror`
+   - Circuit breaker patterns for failure protection
+   - Exponential backoff with jitter
+   - Structured logging and telemetry
+
+5. **Model Registry System**
+   - Intelligent model selection and optimization
+   - Fallback chain management
+   - Cost estimation and budget controls
+   - Performance tier classification
+
+6. **Security Layer**
    - Whitelist configuration
    - Path validation
    - API key management
 
-5. **Tool System**
+7. **Tool System**
    - Async trait-based tools
    - File operations (read, write, list)
    - Extensible tool registry

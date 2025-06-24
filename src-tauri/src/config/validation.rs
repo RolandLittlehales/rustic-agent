@@ -65,6 +65,7 @@ impl Default for ValidationLimits {
 
 impl ValidationLimits {
     /// Create validation limits with custom message size
+    #[allow(dead_code)]
     pub fn with_message_limit(mut self, limit: usize) -> Self {
         self.message_max_chars = limit;
         self.update_warning_thresholds();
@@ -72,12 +73,14 @@ impl ValidationLimits {
     }
 
     /// Create validation limits with custom file size
+    #[allow(dead_code)]
     pub fn with_file_limit(mut self, limit: u64) -> Self {
         self.file_max_size_bytes = limit;
         self
     }
 
     /// Update warning thresholds based on message limit
+    #[allow(dead_code)]
     fn update_warning_thresholds(&mut self) {
         self.message_warning_threshold = (self.message_max_chars as f64 * 0.8) as usize;
         self.message_danger_threshold = (self.message_max_chars as f64 * 0.95) as usize;
@@ -162,6 +165,7 @@ impl ValidationLimits {
     }
 
     /// Check if a message length triggers a warning
+    #[allow(dead_code)]
     pub fn message_warning_level(&self, length: usize) -> MessageWarningLevel {
         if length >= self.message_danger_threshold {
             MessageWarningLevel::Danger
@@ -185,6 +189,7 @@ impl ValidationLimits {
     }
 
     /// Validate file size
+    #[allow(dead_code)]
     pub fn validate_file_size(&self, size: u64) -> Result<()> {
         if size > self.file_max_size_bytes {
             return Err(anyhow::anyhow!(
@@ -197,6 +202,7 @@ impl ValidationLimits {
     }
 
     /// Validate path length
+    #[allow(dead_code)]
     pub fn validate_path_length(&self, path: &str) -> Result<()> {
         if path.len() > self.path_max_chars {
             return Err(anyhow::anyhow!(
@@ -221,6 +227,7 @@ impl ValidationLimits {
     }
 
     /// Format file size as human readable
+    #[allow(dead_code)]
     pub fn format_file_size(bytes: u64) -> String {
         const UNITS: &[&str] = &["B", "KB", "MB", "GB"];
         let mut size = bytes as f64;
@@ -239,11 +246,13 @@ impl ValidationLimits {
     }
 
     /// Get file size limit as human readable string
+    #[allow(dead_code)]
     pub fn file_size_limit_display(&self) -> String {
         Self::format_file_size(self.file_max_size_bytes)
     }
 
     /// Get write content limit as human readable string
+    #[allow(dead_code)]
     pub fn write_content_limit_display(&self) -> String {
         Self::format_file_size(self.write_content_max_bytes)
     }
@@ -251,6 +260,7 @@ impl ValidationLimits {
 
 /// Message warning levels for UI feedback
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum MessageWarningLevel {
     Ok,
     Warning,
@@ -259,6 +269,7 @@ pub enum MessageWarningLevel {
 
 impl MessageWarningLevel {
     /// Get CSS class for the warning level
+    #[allow(dead_code)]
     pub fn css_class(&self) -> &'static str {
         match self {
             MessageWarningLevel::Ok => "text-gray-500",

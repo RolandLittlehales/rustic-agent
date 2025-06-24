@@ -910,3 +910,373 @@ pub struct AppState {
 ```
 
 These patterns ensure we write idiomatic, maintainable Rust code that leverages the language's strengths while following established best practices.
+
+## Development Learnings and Best Practices
+
+### Key Implementation Insights (Issue 1.2: Error Handling & Model Configuration)
+
+Based on the comprehensive implementation of the unified error handling framework and model configuration system, these learnings capture critical insights for future development.
+
+#### 1. **Magic Number Elimination Strategy**
+
+**Abstract Principle**: When eliminating magic numbers, think in terms of **semantic groupings** rather than just replacing numbers with constants.
+
+**Concrete Examples**:
+```rust
+// ❌ Bad: Just replacing numbers
+const FIVE: u32 = 5;
+const SIXTY: u64 = 60;
+
+// ✅ Good: Semantic grouping with business context
+pub mod circuit_breaker {
+    /// Circuit opens after 5 consecutive failures to protect downstream systems
+    pub const DEFAULT_FAILURE_THRESHOLD: u32 = 5;
+}
+
+pub mod error_handling {
+    /// How long circuit stays open before attempting recovery (60s)
+    pub const DEFAULT_CIRCUIT_TIMEOUT_SECS: u64 = 60;
+}
+```
+
+**Key Learning**: Group constants by **domain purpose**, not by data type. Each constant should include:
+- Business rationale (why this value)
+- Usage context (how it's used)
+- Impact explanation (what happens if changed)
+
+#### 2. **Configuration Architecture Pattern**
+
+**Abstract Principle**: Think of configuration as **three distinct layers** with different lifecycles and purposes.
+
+**Implementation Pattern**:
+```rust
+// Layer 1: Compile-time constants (never change)
+pub const CLAUDE_API_BASE_URL: &str = "https://api.anthropic.com/v1";
+
+// Layer 2: Runtime configuration (deployment-specific)
+pub struct RuntimeConfig {
+    pub api_key: Option<String>,           // From environment
+    pub http_timeout_ms: u64,              // Configurable per deployment
+}
+
+// Layer 3: Validation limits (security boundaries)
+pub struct ValidationLimits {
+    pub message_max_chars: usize,          // Can be adjusted for different use cases
+    pub file_max_size_bytes: u64,         // Security/resource limits
+}
+```
+
+**Critical Insight**: Never mix these layers. If you find yourself wanting to make a "constant" configurable, it belongs in Layer 2 (Runtime), not Layer 1 (Constants).
+
+#### 3. **Error Context Design Philosophy**
+
+**Abstract Principle**: Error information should be **structured for both humans and machines**, with security as a first-class concern.
+
+**Practical Implementation**:
+```rust
+// ✅ Good: Rich context with security safeguards
+pub struct ErrorContext {
+    pub operation: String,                 // What was being attempted
+    pub timestamp: DateTime<Utc>,          // When it happened
+    pub retry_count: u32,                  // Operational context
+    pub metadata: HashMap<String, String>, // Structured additional data
+}
+
+impl ErrorContext {
+    /// Log with automatic sanitization
+    pub fn log_error(&self, error: &ClaudeError) {
+        let safe_message = Self::sanitize_error_message(&error.to_string());
+        // ... logging with PII/API key redaction
+    }
+}
+```
+
+**Key Learning**: Always sanitize error messages **at the logging point**, not at the error creation point. This preserves full error information for debugging while ensuring safe logging.
+
+#### 4. **Circuit Breaker Implementation Patterns**
+
+**Abstract Principle**: Circuit breakers should be **stateless from the caller's perspective** but maintain internal state atomically.
+
+**Concrete Pattern**:
+```rust
+// ✅ Good: Atomic state management
+pub struct CircuitBreaker {
+    state: AtomicU8,                    // Thread-safe state
+    failure_count: AtomicU32,           // Atomic counters
+    last_failure_time: Mutex<Option<Instant>>, // Only for timestamp
+}
+
+impl CircuitBreaker {
+    pub fn can_execute(&self) -> bool {
+        // State transitions happen atomically
+        match self.get_state() {
+            CircuitBreakerState::Open => {
+                if self.should_attempt_reset() {
+                    self.set_state(CircuitBreakerState::HalfOpen);
+                    true
+                } else { false }
+            }
+            _ => true
+        }
+    }
+}
+```
+
+**Critical Learning**: Use `AtomicU8` for state enum values, not `Mutex<enum>`. This eliminates contention and prevents deadlocks.
+
+#### 5. **Model Registry Design Anti-Patterns**
+
+**Abstract Principle**: When designing registries, think about **selection algorithms** and **fallback strategies** from the beginning.
+
+**Concrete Anti-Pattern and Solution**:
+```rust
+// ❌ Anti-pattern: Hardcoded model selection
+fn get_model() -> &'static str {
+    "claude-4-sonnet-20250514" // What happens when this model is deprecated?
+}
+
+// ✅ Good: Smart selection with fallback chains
+pub fn get_model_by_variant(variant: ModelVariant, offset: i32) -> &'static str {
+    let models = get_models_for_variant(variant); // Ordered by preference
+    models.get(offset.abs() as usize).unwrap_or(&models[0])
+}
+
+// ✅ Good: Automatic fallback chains
+fn setup_fallback_chains(&mut self) {
+    self.fallback_chains.insert(
+        model_ids::CLAUDE_4_SONNET,
+        vec![
+            model_ids::CLAUDE_3_7_SONNET,    // Next best alternative
+            model_ids::CLAUDE_3_5_SONNET,    // Fallback
+            model_ids::CLAUDE_3_HAIKU,       // Last resort
+        ]
+    );
+}
+```
+
+**Key Learning**: Always design for **model evolution**. Models get deprecated, new ones get added. Your selection logic should handle this gracefully without code changes.
+
+#### 6. **Constants File Organization Strategy**
+
+**Abstract Principle**: Constants should be **discoverable by domain**, not by type or alphabetical order.
+
+**Effective Organization Pattern**:
+```rust
+// ✅ Good: Domain-based organization
+pub mod circuit_breaker {     // All circuit breaker related values
+    pub const STATE_CLOSED: u8 = 0;
+    pub const STATE_OPEN: u8 = 1;
+    pub const DEFAULT_FAILURE_THRESHOLD: u32 = 5;
+    pub const DEFAULT_TIMEOUT_SECS: u64 = 60;
+}
+
+pub mod model_costs {         // All cost-related values together
+    pub const CLAUDE_4_OPUS_INPUT_COST: f64 = 15.0;
+    pub const CLAUDE_4_OPUS_OUTPUT_COST: f64 = 75.0;
+    pub const TOKENS_PER_MILLION: f64 = 1_000_000.0;
+}
+```
+
+**Anti-Pattern to Avoid**:
+```rust
+// ❌ Bad: Type-based organization
+pub mod strings {
+    pub const CLAUDE_API_URL: &str = "...";
+    pub const ERROR_MESSAGE: &str = "...";
+}
+
+pub mod numbers {
+    pub const FAILURE_THRESHOLD: u32 = 5;
+    pub const MAX_TOKENS: u32 = 8192;
+}
+```
+
+**Learning**: Group by **problem domain**, not by data type. A developer looking for circuit breaker settings wants to see all related values together.
+
+#### 7. **Telemetry Design Principles**
+
+**Abstract Principle**: Telemetry should be **bounded by design** to prevent it from becoming a liability in production.
+
+**Practical Implementation**:
+```rust
+// ✅ Good: Bounded error tracking
+pub struct BoundedErrorCounter {
+    counts: HashMap<String, u64>,
+    max_entries: usize,              // Prevents unbounded growth
+    last_cleanup: Instant,           // Automatic cleanup
+    cleanup_interval: Duration,
+}
+
+impl BoundedErrorCounter {
+    pub fn increment(&mut self, error_type: &str) {
+        // Periodic cleanup prevents memory leaks
+        if self.last_cleanup.elapsed() > self.cleanup_interval {
+            self.cleanup_low_frequency_entries();
+        }
+        
+        // Bounded by design - evict least frequent when at capacity
+        if self.counts.len() >= self.max_entries && !self.counts.contains_key(error_type) {
+            self.remove_least_frequent();
+        }
+    }
+}
+```
+
+**Critical Learning**: Every telemetry system that accepts unbounded input **will eventually cause production issues**. Design bounds from the beginning, not as an afterthought.
+
+#### 8. **Frontend-Backend Configuration Synchronization**
+
+**Abstract Principle**: Configuration constants should have a **single source of truth** with automatic synchronization.
+
+**Problem Identified**:
+```javascript
+// ❌ Problem: Frontend constants manually copied from backend
+const MESSAGE_MAX_CHARS = 50000; // Hope this matches backend!
+```
+
+**Solution Pattern**:
+```rust
+// build.rs - Generate frontend config from Rust constants
+fn generate_js_config() -> String {
+    format!(r#"
+export const CONFIG = {{
+    MESSAGE_MAX_CHARS: {},
+    FILE_MAX_SIZE_BYTES: {},
+}};
+"#, 
+        crate::config::validation::defaults::MESSAGE_MAX_CHARS,
+        crate::config::validation::defaults::FILE_MAX_SIZE_BYTES,
+    )
+}
+```
+
+**Learning**: If you have the same constant in multiple languages/layers, set up **build-time code generation** to maintain synchronization.
+
+#### 9. **Security-First Error Handling**
+
+**Abstract Principle**: Security sanitization should be **automatic and comprehensive**, not opt-in.
+
+**Implementation Strategy**:
+```rust
+impl ErrorContext {
+    /// Automatically sanitize all error output
+    fn sanitize_error_message(message: &str) -> String {
+        let mut sanitized = message.to_string();
+        
+        // Pattern-based API key detection
+        if let Some(start) = sanitized.find("sk-ant-") {
+            sanitized.replace_range(start.., "[API_KEY_REDACTED]");
+        }
+        
+        // Path sanitization for common sensitive directories
+        for sensitive_path in &["/home/", "/Users/", "C:\\Users\\"] {
+            if let Some(start) = sanitized.find(sensitive_path) {
+                sanitized.replace_range(start.., "/[USER_DIR_REDACTED]");
+            }
+        }
+        
+        sanitized
+    }
+}
+```
+
+**Key Learning**: Make security sanitization the **default behavior**. Developers shouldn't have to remember to sanitize - it should happen automatically at the logging boundary.
+
+#### 10. **Testing Strategy for Complex Systems**
+
+**Abstract Principle**: Test **system properties** and **invariants**, not just individual function behavior.
+
+**Effective Testing Patterns**:
+```rust
+#[test]
+fn test_circuit_breaker_invariants() {
+    let cb = CircuitBreaker::new(3, Duration::from_secs(60));
+    
+    // Test the invariant: circuit opens after threshold failures
+    for _ in 0..2 {
+        cb.record_failure();
+        assert!(cb.can_execute()); // Should still be closed
+    }
+    
+    cb.record_failure(); // Third failure
+    assert!(!cb.can_execute()); // Should now be open
+    
+    // Test recovery invariant
+    cb.record_success();
+    assert!(cb.can_execute()); // Should be closed again
+}
+
+#[test]
+fn test_cost_calculation_monotonicity() {
+    let registry = ModelRegistry::new();
+    
+    // Property: more tokens = higher cost
+    let cost1 = registry.estimate_cost("claude-4-sonnet", 1000, 500).unwrap();
+    let cost2 = registry.estimate_cost("claude-4-sonnet", 2000, 1000).unwrap();
+    
+    assert!(cost2 > cost1); // Monotonicity property
+}
+```
+
+**Learning**: Focus on testing **system properties** (monotonicity, boundedness, consistency) rather than just testing that functions return expected values for specific inputs.
+
+### Abstract Development Principles
+
+#### **When Implementing Error Handling Systems**
+
+1. **Think "Observability First"**: Design errors to be easily searchable, aggregatable, and actionable
+2. **Security by Default**: Make sanitization automatic, not optional
+3. **Bounded by Design**: Every collector/aggregator needs explicit bounds
+4. **Context Over Messages**: Structured context beats verbose error messages
+
+#### **When Designing Configuration Systems**
+
+1. **Layer Separation**: Compile-time vs Runtime vs Validation - never mix these concerns
+2. **Single Source of Truth**: One authoritative location per value, with re-exports as needed
+3. **Business Context**: Every constant should explain the business reason for its value
+4. **Environment Flexibility**: Support different values per deployment without code changes
+
+#### **When Building Model Management Systems**
+
+1. **Evolution Planning**: Design for model deprecation and addition from day one
+2. **Fallback Strategies**: Never hardcode single model choices
+3. **Cost Awareness**: Make cost implications visible and calculable
+4. **Performance Tiers**: Group models by use case, not just by name
+
+#### **When Implementing Concurrent Systems**
+
+1. **Atomic over Mutex**: Use atomic operations for simple state, reserve mutexes for complex state
+2. **Reader-Writer Separation**: Use RwLock for read-heavy, infrequently-written data
+3. **Lock Ordering**: Document and enforce consistent lock acquisition order
+4. **Bounded Queues**: Never use unbounded channels or collections in production code
+
+### Concrete Implementation Checklists
+
+#### **Before Adding Any New Constant**
+- [ ] Is this truly constant or should it be configurable?
+- [ ] Which layer does it belong to? (Compile-time/Runtime/Validation)
+- [ ] Is there a business reason for this specific value?
+- [ ] Have I documented why this value was chosen?
+- [ ] Will this need to differ between deployments?
+
+#### **Before Implementing Error Handling**
+- [ ] What context will help debug this error?
+- [ ] Could this error message contain sensitive information?
+- [ ] Is this error actionable by the user or just for logging?
+- [ ] What telemetry should be captured when this occurs?
+- [ ] How will this error be aggregated and monitored?
+
+#### **Before Creating Registry/Collection Systems**
+- [ ] How will this handle scale (1000x current size)?
+- [ ] What are the memory bounds in worst-case scenarios?
+- [ ] How will entries be evicted or cleaned up?
+- [ ] What happens when the registry becomes full?
+- [ ] How will this handle concurrent access?
+
+#### **Before Adding Frontend Configuration**
+- [ ] Does this duplicate a backend constant?
+- [ ] How will these stay synchronized?
+- [ ] Should this be generated from backend config?
+- [ ] What happens if frontend and backend disagree?
+
+These learnings represent battle-tested patterns that emerged from real implementation challenges and should guide future development decisions.

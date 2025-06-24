@@ -406,6 +406,7 @@ fn main() {
         model: app_config.runtime.model.clone(),
         max_tokens: app_config.runtime.max_tokens,
         temperature: app_config.runtime.temperature,
+        model_registry: crate::claude::ModelRegistry::new(),
     };
 
     tauri::Builder::default()

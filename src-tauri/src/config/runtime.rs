@@ -214,41 +214,49 @@ impl RuntimeConfig {
     }
 
     /// Check if the model supports thinking
+    #[allow(dead_code)]
     pub fn supports_thinking(&self) -> bool {
         super::constants::model_supports_thinking(&self.model)
     }
 
     /// Check if this is a Claude 4 model
+    #[allow(dead_code)]
     pub fn is_claude_4(&self) -> bool {
         super::constants::is_claude_4_model(&self.model)
     }
 
     /// Get HTTP timeout as Duration
+    #[allow(dead_code)]
     pub fn http_timeout(&self) -> std::time::Duration {
         std::time::Duration::from_millis(self.http_timeout_ms)
     }
 
     /// Get rate limit interval as Duration
+    #[allow(dead_code)]
     pub fn rate_limit_interval(&self) -> std::time::Duration {
         std::time::Duration::from_millis(self.rate_limit_interval_ms)
     }
 
     /// Get file watcher poll interval as Duration
+    #[allow(dead_code)]
     pub fn file_watcher_poll_interval(&self) -> std::time::Duration {
         std::time::Duration::from_millis(self.file_watcher_poll_ms)
     }
 
     /// Get file watcher debounce duration
+    #[allow(dead_code)]
     pub fn file_watcher_debounce(&self) -> std::time::Duration {
         std::time::Duration::from_millis(self.file_watcher_debounce_ms)
     }
 
     /// Get heartbeat interval as Duration
+    #[allow(dead_code)]
     pub fn heartbeat_interval(&self) -> std::time::Duration {
         std::time::Duration::from_secs(self.heartbeat_interval_secs)
     }
 
     /// Get retry base delay as Duration
+    #[allow(dead_code)]
     pub fn retry_base_delay(&self) -> std::time::Duration {
         std::time::Duration::from_millis(self.retry_base_delay_ms)
     }

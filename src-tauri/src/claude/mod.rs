@@ -1,47 +1,20 @@
+use crate::claude::constants::model_config;
 use crate::claude::error::{ClaudeError, ClaudeResult};
 use crate::claude::types::{ContentBlock, MessageRole};
 use serde::{Deserialize, Serialize};
 
 pub mod client;
+pub mod constants;
 pub mod error;
 pub mod message;
 pub mod message_processor;
+pub mod model_registry;
 pub mod tools;
 pub mod types;
 pub mod whitelist;
 
 pub use client::ClaudeClient;
-
-#[derive(Debug, Clone)]
-pub struct ModelInfo {
-    #[allow(dead_code)]
-    pub family: String,
-    #[allow(dead_code)]
-    pub variant: String,
-    #[allow(dead_code)]
-    pub max_tokens: u32,
-    pub supports_thinking: bool,
-    #[allow(dead_code)]
-    pub supports_tool_use: bool,
-    #[allow(dead_code)]
-    pub cost_per_million_input: f64,
-    #[allow(dead_code)]
-    pub cost_per_million_output: f64,
-}
-
-impl Default for ModelInfo {
-    fn default() -> Self {
-        Self {
-            family: "claude-3-5".to_string(),
-            variant: "sonnet".to_string(),
-            max_tokens: 4096,
-            supports_thinking: false,
-            supports_tool_use: true,
-            cost_per_million_input: 3.0,
-            cost_per_million_output: 15.0,
-        }
-    }
-}
+pub use model_registry::{ModelInfo, ModelRegistry};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClaudeConfig {
@@ -49,15 +22,18 @@ pub struct ClaudeConfig {
     pub model: String,
     pub max_tokens: u32,
     pub temperature: f32,
+    #[serde(skip)]
+    pub model_registry: ModelRegistry,
 }
 
 impl Default for ClaudeConfig {
     fn default() -> Self {
         Self {
             api_key: String::new(),
-            model: "claude-sonnet-4-20250514".to_string(),
-            max_tokens: 8192, // Increased for Claude 4
-            temperature: 0.7,
+            model: model_config::default_model().to_string(),
+            max_tokens: model_config::DEFAULT_MAX_TOKENS,
+            temperature: model_config::DEFAULT_TEMPERATURE,
+            model_registry: ModelRegistry::new(),
         }
     }
 }
@@ -72,22 +48,34 @@ impl ClaudeConfig {
             });
         }
 
-        if !self.is_valid_model() {
-            return Err(ClaudeError::ConfigError {
-                message: format!("Invalid model: {}", self.model),
-                context: None,
-            });
-        }
+        // Validate model using registry
+        self.model_registry.validate_model(&self.model)?;
 
-        if self.max_tokens == 0 || self.max_tokens > 200000 {
-            return Err(ClaudeError::ConfigError {
-                message: "Max tokens must be between 1 and 200000".to_string(),
-                context: None,
-            });
+        // Validate max_tokens against model limits
+        if let Some(model_info) = self.model_registry.get_model_info(&self.model) {
+            if self.max_tokens == 0 {
+                return Err(ClaudeError::ValidationError {
+                    field: "max_tokens".to_string(),
+                    message: "Max tokens must be greater than 0".to_string(),
+                    context: None,
+                });
+            }
+
+            if self.max_tokens > model_info.max_tokens {
+                return Err(ClaudeError::ValidationError {
+                    field: "max_tokens".to_string(),
+                    message: format!(
+                        "Max tokens ({}) exceeds model limit ({})",
+                        self.max_tokens, model_info.max_tokens
+                    ),
+                    context: None,
+                });
+            }
         }
 
         if !(0.0..=1.0).contains(&self.temperature) {
-            return Err(ClaudeError::ConfigError {
+            return Err(ClaudeError::ValidationError {
+                field: "temperature".to_string(),
                 message: "Temperature must be between 0.0 and 1.0".to_string(),
                 context: None,
             });
@@ -96,76 +84,8 @@ impl ClaudeConfig {
         Ok(())
     }
 
-    fn is_valid_model(&self) -> bool {
-        matches!(
-            self.model.as_str(),
-            "claude-sonnet-4-20250514"
-                | "claude-3-5-sonnet-20241022"
-                | "claude-3-5-haiku-20241022"
-                | "claude-3-opus-20240229"
-                | "claude-3-sonnet-20240229"
-                | "claude-3-haiku-20240307"
-        )
-    }
-
-    pub fn get_model_info(&self) -> ModelInfo {
-        match self.model.as_str() {
-            "claude-sonnet-4-20250514" => ModelInfo {
-                family: "claude-4".to_string(),
-                variant: "sonnet".to_string(),
-                max_tokens: 200000,
-                supports_thinking: true,
-                supports_tool_use: true,
-                cost_per_million_input: 3.0,
-                cost_per_million_output: 15.0,
-            },
-            "claude-3-5-sonnet-20241022" => ModelInfo {
-                family: "claude-3-5".to_string(),
-                variant: "sonnet".to_string(),
-                max_tokens: 200000,
-                supports_thinking: false,
-                supports_tool_use: true,
-                cost_per_million_input: 3.0,
-                cost_per_million_output: 15.0,
-            },
-            "claude-3-5-haiku-20241022" => ModelInfo {
-                family: "claude-3-5".to_string(),
-                variant: "haiku".to_string(),
-                max_tokens: 200000,
-                supports_thinking: false,
-                supports_tool_use: true,
-                cost_per_million_input: 0.25,
-                cost_per_million_output: 1.25,
-            },
-            "claude-3-opus-20240229" => ModelInfo {
-                family: "claude-3".to_string(),
-                variant: "opus".to_string(),
-                max_tokens: 4096,
-                supports_thinking: false,
-                supports_tool_use: true,
-                cost_per_million_input: 15.0,
-                cost_per_million_output: 75.0,
-            },
-            "claude-3-sonnet-20240229" => ModelInfo {
-                family: "claude-3".to_string(),
-                variant: "sonnet".to_string(),
-                max_tokens: 4096,
-                supports_thinking: false,
-                supports_tool_use: true,
-                cost_per_million_input: 3.0,
-                cost_per_million_output: 15.0,
-            },
-            "claude-3-haiku-20240307" => ModelInfo {
-                family: "claude-3".to_string(),
-                variant: "haiku".to_string(),
-                max_tokens: 4096,
-                supports_thinking: false,
-                supports_tool_use: true,
-                cost_per_million_input: 0.25,
-                cost_per_million_output: 1.25,
-            },
-            _ => ModelInfo::default(),
-        }
+    pub fn get_model_info(&self) -> Option<&ModelInfo> {
+        self.model_registry.get_model_info(&self.model)
     }
 
     #[allow(dead_code)]
@@ -174,36 +94,43 @@ impl ClaudeConfig {
     }
 
     pub fn supports_thinking(&self) -> bool {
-        self.get_model_info().supports_thinking
+        self.get_model_info()
+            .map(|info| info.supports_thinking)
+            .unwrap_or(false)
     }
 
     #[allow(dead_code)]
     pub fn supports_tool_use(&self) -> bool {
-        self.get_model_info().supports_tool_use
+        self.get_model_info()
+            .map(|info| info.supports_tool_use)
+            .unwrap_or(true)
     }
 
     #[allow(dead_code)]
     pub fn get_max_model_tokens(&self) -> u32 {
-        self.get_model_info().max_tokens
+        self.get_model_info()
+            .map(|info| info.max_tokens)
+            .unwrap_or(model_config::FALLBACK_MAX_TOKENS)
     }
 
     #[allow(dead_code)]
     pub fn estimate_cost(&self, input_tokens: u32, output_tokens: u32) -> f64 {
-        let model_info = self.get_model_info();
-        let input_cost = (input_tokens as f64 / 1_000_000.0) * model_info.cost_per_million_input;
-        let output_cost = (output_tokens as f64 / 1_000_000.0) * model_info.cost_per_million_output;
-        input_cost + output_cost
+        if let Some(model_info) = self.get_model_info() {
+            let input_cost =
+                (input_tokens as f64 / 1_000_000.0) * model_info.cost_per_million_input;
+            let output_cost =
+                (output_tokens as f64 / 1_000_000.0) * model_info.cost_per_million_output;
+            input_cost + output_cost
+        } else {
+            0.0 // Default fallback
+        }
     }
 
     #[allow(dead_code)]
     pub fn with_model(mut self, model: impl Into<String>) -> ClaudeResult<Self> {
         self.model = model.into();
-        if !self.is_valid_model() {
-            return Err(ClaudeError::ConfigError {
-                message: format!("Invalid model: {}", self.model),
-                context: None,
-            });
-        }
+        // Use ModelRegistry for validation instead of hardcoded list
+        self.model_registry.validate_model(&self.model)?;
         Ok(self)
     }
 
@@ -436,13 +363,14 @@ impl Conversation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::claude::constants::test_data;
 
     #[test]
     fn test_claude_config_default() {
         let config = ClaudeConfig::default();
-        assert_eq!(config.model, "claude-sonnet-4-20250514");
-        assert_eq!(config.max_tokens, 8192);
-        assert_eq!(config.temperature, 0.7);
+        assert_eq!(config.model, model_config::default_model());
+        assert_eq!(config.max_tokens, model_config::DEFAULT_MAX_TOKENS);
+        assert_eq!(config.temperature, model_config::DEFAULT_TEMPERATURE);
         assert!(config.is_claude_4());
         assert!(config.supports_thinking());
         assert!(config.supports_tool_use());
@@ -477,11 +405,11 @@ mod tests {
     #[test]
     fn test_model_info() {
         let config = ClaudeConfig::default();
-        let model_info = config.get_model_info();
+        let model_info = config.get_model_info().unwrap();
 
         assert_eq!(model_info.family, "claude-4");
         assert_eq!(model_info.variant, "sonnet");
-        assert_eq!(model_info.max_tokens, 200000);
+        assert_eq!(model_info.max_tokens, model_config::DEFAULT_MAX_TOKENS);
         assert!(model_info.supports_thinking);
         assert!(model_info.supports_tool_use);
         assert_eq!(model_info.cost_per_million_input, 3.0);
@@ -493,12 +421,13 @@ mod tests {
         let config = ClaudeConfig {
             api_key: "test".to_string(),
             model: "claude-3-5-sonnet-20241022".to_string(),
-            max_tokens: 4096,
-            temperature: 0.7,
+            max_tokens: test_data::TEST_MAX_TOKENS,
+            temperature: model_config::DEFAULT_TEMPERATURE,
+            model_registry: ModelRegistry::new(),
         };
-        let model_info = config.get_model_info();
+        let model_info = config.get_model_info().unwrap();
 
-        assert_eq!(model_info.family, "claude-3-5");
+        assert_eq!(model_info.family, "claude-3.5");
         assert!(!model_info.supports_thinking);
         assert!(model_info.supports_tool_use);
     }
@@ -506,12 +435,14 @@ mod tests {
     #[test]
     fn test_cost_estimation() {
         let config = ClaudeConfig::default();
-        let cost = config.estimate_cost(1000, 500);
+        let cost =
+            config.estimate_cost(test_data::TEST_INPUT_TOKENS, test_data::TEST_OUTPUT_TOKENS);
 
-        // 1000 input tokens at 3.0 per million = 0.003
-        // 500 output tokens at 15.0 per million = 0.0075
-        // Total = 0.0105
-        assert!((cost - 0.0105).abs() < 0.0001);
+        // Expected cost from test constants
+        assert!(
+            (cost - test_data::EXPECTED_CLAUDE_4_SONNET_COST).abs()
+                < test_data::COST_CALCULATION_TOLERANCE
+        );
     }
 
     #[test]
@@ -519,14 +450,14 @@ mod tests {
         let config = ClaudeConfig::default()
             .with_model("claude-3-5-sonnet-20241022")
             .unwrap()
-            .with_max_tokens(4096)
+            .with_max_tokens(test_data::TEST_MAX_TOKENS)
             .unwrap()
-            .with_temperature(0.5)
+            .with_temperature(test_data::TEST_TEMPERATURE)
             .unwrap();
 
         assert_eq!(config.model, "claude-3-5-sonnet-20241022");
-        assert_eq!(config.max_tokens, 4096);
-        assert_eq!(config.temperature, 0.5);
+        assert_eq!(config.max_tokens, test_data::TEST_MAX_TOKENS);
+        assert_eq!(config.temperature, test_data::TEST_TEMPERATURE);
     }
 
     #[test]
