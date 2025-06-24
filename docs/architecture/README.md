@@ -14,6 +14,10 @@ The Claude AI Agent is a Tauri v2-based desktop application that provides a secu
 
 - **[Error Handling System](./error-handling-system.md)** - Comprehensive error handling framework with `thiserror` integration, circuit breaker patterns, retry logic, and structured telemetry for robust failure management.
 
+- **[Configuration System](./configuration-system.md)** - Three-tier configuration architecture (constants, runtime, validation) that eliminates hardcoded values and provides type-safe, environment-flexible configuration management.
+
+- **[Security Model](./security-model.md)** - Comprehensive security architecture with whitelist-based file access, API key isolation, automatic error sanitization, and defense-in-depth protection.
+
 ### API References
 
 - **[ContentBlock Types API](../api/content-block-types.md)** - Complete API reference for ContentBlock enum, ClaudeMessage structure, and error handling types.
