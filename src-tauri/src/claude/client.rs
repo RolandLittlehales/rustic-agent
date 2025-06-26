@@ -1,12 +1,15 @@
 use crate::claude::{
+    tools::{AgentTool, ToolRegistry},
     types::*,
-    tools::{ToolRegistry, AgentTool},
     ClaudeConfig, Conversation,
 };
-use anyhow::{Result, Context};
+use crate::constants;
+use crate::logging::ApiCallLog;
+use anyhow::{Context, Result};
 use reqwest::Client;
-use std::time::{Duration, Instant};
-use std::sync::Mutex;
+use std::time::Instant;
+use tokio::sync::Mutex;
+use uuid::Uuid;
 
 #[derive(Debug)]
 pub struct ClaudeClient {
@@ -22,15 +25,18 @@ impl ClaudeClient {
         if config.api_key.is_empty() {
             return Err(anyhow::anyhow!("API key cannot be empty"));
         }
-        
+
+        // Create HTTP client with connection pooling for improved performance
         let http_client = Client::builder()
-            .timeout(Duration::from_secs(120))
-            .user_agent("LLMDevAgent/0.1.0")
+            .timeout(constants::http_client_timeout())
+            .user_agent(constants::USER_AGENT)
+            .pool_idle_timeout(std::time::Duration::from_secs(constants::POOL_IDLE_TIMEOUT_SECS))
+            .pool_max_idle_per_host(constants::POOL_MAX_IDLE_PER_HOST)
             .build()
             .context("Failed to create HTTP client")?;
 
         let mut tool_registry = ToolRegistry::new();
-        
+
         // Register default tools
         tool_registry.register(crate::claude::tools::ReadFileTool);
         tool_registry.register(crate::claude::tools::WriteFileTool);
@@ -48,7 +54,11 @@ impl ClaudeClient {
         self.tool_registry.register(tool);
     }
 
-    pub async fn send_message(&self, conversation: &Conversation, message: String) -> Result<String> {
+    pub async fn send_message(
+        &self,
+        conversation: &Conversation,
+        message: String,
+    ) -> Result<String> {
         let mut messages = self.conversation_to_claude_messages(conversation);
         messages.push(ClaudeMessage::user_text(message));
 
@@ -60,7 +70,7 @@ impl ClaudeClient {
             temperature: self.config.temperature,
             messages,
             tools: Some(tools),
-            system: Some("You are a helpful AI assistant specialized in software development. You have access to various tools to help with file operations, code analysis, and development tasks.".to_string()),
+            system: Some(constants::CLAUDE_SYSTEM_PROMPT.to_string()),
         };
 
         let response = self.make_api_call(request).await?;
@@ -68,13 +78,29 @@ impl ClaudeClient {
     }
 
     async fn make_api_call(&self, request: ClaudeRequest) -> Result<ClaudeResponse> {
+        let api_start_time = Instant::now();
+        let request_id = Uuid::new_v4().to_string();
+
+        // Create log entry with request snippet
+        let request_content = request
+            .messages
+            .last()
+            .and_then(|msg| msg.content.first())
+            .and_then(|content| match content {
+                ContentBlock::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .unwrap_or("No content");
+
+        let mut api_log = ApiCallLog::new(&request_id, &self.config.model, request_content);
+
         // Rate limiting: ensure at least 1 second between requests
         let sleep_duration = {
-            let mut last_request = self.last_request.lock().unwrap();
+            let last_request = self.last_request.lock().await;
             if let Some(last_time) = *last_request {
                 let elapsed = last_time.elapsed();
-                if elapsed < Duration::from_secs(1) {
-                    Some(Duration::from_secs(1) - elapsed)
+                if elapsed < constants::rate_limit_duration() {
+                    Some(constants::rate_limit_duration() - elapsed)
                 } else {
                     None
                 }
@@ -82,42 +108,65 @@ impl ClaudeClient {
                 None
             }
         };
-        
+
         if let Some(duration) = sleep_duration {
             tokio::time::sleep(duration).await;
         }
-        
+
         // Update last request time
         {
-            let mut last_request = self.last_request.lock().unwrap();
+            let mut last_request = self.last_request.lock().await;
             *last_request = Some(Instant::now());
         }
 
-        let response = self
+        let response = match self
             .http_client
-            .post("https://api.anthropic.com/v1/messages")
+            .post(constants::CLAUDE_API_MESSAGES_ENDPOINT)
             .header("x-api-key", &self.config.api_key)
-            .header("anthropic-version", "2023-06-01")
+            .header("anthropic-version", constants::CLAUDE_API_VERSION)
             .header("content-type", "application/json")
             .json(&request)
             .send()
             .await
-            .context("Failed to send request to Claude API")?;
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                api_log = api_log.with_error(format!("Request failed: {}", e));
+                api_log.duration = api_start_time.elapsed();
+                api_log.log();
+                return Err(e).context("Failed to send request to Claude API");
+            }
+        };
 
-        if !response.status().is_success() {
-            let status = response.status();
+        let status = response.status();
+        api_log = api_log.with_response(status.as_u16(), api_start_time.elapsed());
+
+        if !status.is_success() {
             let text = response.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!(
-                "Claude API request failed with status {}: {}",
-                status,
-                text
-            ));
+            let error = format!("Claude API request failed with status {}: {}", status, text);
+            api_log = api_log.with_error(&error);
+            api_log.log();
+            return Err(anyhow::anyhow!(error));
         }
 
-        let claude_response: ClaudeResponse = response
-            .json()
-            .await
-            .context("Failed to parse Claude API response")?;
+        let claude_response: ClaudeResponse = match response.json::<ClaudeResponse>().await {
+            Ok(resp) => {
+                // Extract token usage if available
+                if let Some(usage) = &resp.usage {
+                    api_log = api_log.with_tokens(
+                        usage.input_tokens.unwrap_or(0),
+                        usage.output_tokens.unwrap_or(0),
+                    );
+                }
+                api_log.log();
+                resp
+            }
+            Err(e) => {
+                api_log = api_log.with_error(format!("Failed to parse response: {}", e));
+                api_log.log();
+                return Err(e).context("Failed to parse Claude API response");
+            }
+        };
 
         Ok(claude_response)
     }
@@ -161,13 +210,17 @@ impl ClaudeClient {
             .collect()
     }
 
-    pub async fn chat(&self, conversation: &mut Conversation, user_message: String) -> Result<String> {
+    pub async fn chat(
+        &self,
+        conversation: &mut Conversation,
+        user_message: String,
+    ) -> Result<String> {
         conversation.add_user_message(user_message.clone());
-        
+
         let response = self.send_message(conversation, user_message).await?;
-        
+
         conversation.add_assistant_message(response.clone());
-        
+
         Ok(response)
     }
 

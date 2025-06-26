@@ -1,5 +1,6 @@
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
+use crate::constants;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClaudeConfig {
@@ -29,15 +30,15 @@ impl Default for ClaudeConfig {
     fn default() -> Self {
         Self {
             api_key: String::new(),
-            base_url: "https://api.anthropic.com".to_string(),
-            model: "claude-3-sonnet-20240229".to_string(),
-            max_tokens: 4096,
+            base_url: constants::CLAUDE_API_BASE_URL.to_string(),
+            model: constants::CLAUDE_CONFIG_DEFAULT_MODEL.to_string(),
+            max_tokens: constants::CLAUDE_MAX_TOKENS,
             temperature: None,
             top_p: None,
             top_k: None,
             stop_sequences: None,
-            timeout: Duration::from_secs(60),
-            max_retries: 3,
+            timeout: constants::default_operation_timeout(),
+            max_retries: constants::MAX_RETRIES,
         }
     }
 }

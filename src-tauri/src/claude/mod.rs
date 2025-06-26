@@ -1,8 +1,9 @@
+use crate::constants;
 use serde::{Deserialize, Serialize};
 
 pub mod client;
-pub mod types;
 pub mod tools;
+pub mod types;
 
 pub use client::ClaudeClient;
 
@@ -18,9 +19,9 @@ impl Default for ClaudeConfig {
     fn default() -> Self {
         Self {
             api_key: String::new(),
-            model: "claude-3-5-sonnet-20241022".to_string(),
-            max_tokens: 4096,
-            temperature: 0.7,
+            model: constants::CLAUDE_DEFAULT_MODEL.to_string(),
+            max_tokens: constants::CLAUDE_MAX_TOKENS,
+            temperature: constants::CLAUDE_DEFAULT_TEMPERATURE,
         }
     }
 }
@@ -36,7 +37,7 @@ pub struct ConversationMessage {
 impl ConversationMessage {
     pub fn new_user(content: String) -> Self {
         Self {
-            role: "user".to_string(),
+            role: crate::constants::CLAUDE_ROLE_USER.to_string(),
             content,
             timestamp: chrono::Utc::now(),
             message_id: uuid::Uuid::new_v4().to_string(),
@@ -45,7 +46,7 @@ impl ConversationMessage {
 
     pub fn new_assistant(content: String) -> Self {
         Self {
-            role: "assistant".to_string(),
+            role: crate::constants::CLAUDE_ROLE_ASSISTANT.to_string(),
             content,
             timestamp: chrono::Utc::now(),
             message_id: uuid::Uuid::new_v4().to_string(),

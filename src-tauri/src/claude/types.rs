@@ -45,13 +45,13 @@ pub struct ClaudeResponse {
     pub model: String,
     pub stop_reason: Option<String>,
     pub stop_sequence: Option<String>,
-    pub usage: Usage,
+    pub usage: Option<Usage>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Usage {
-    pub input_tokens: u32,
-    pub output_tokens: u32,
+    pub input_tokens: Option<u32>,
+    pub output_tokens: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

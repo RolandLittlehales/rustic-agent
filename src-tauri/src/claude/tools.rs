@@ -1,8 +1,12 @@
-use crate::claude::types::{Tool, ToolInputSchema, PropertySchema};
+use crate::claude::types::{PropertySchema, Tool, ToolInputSchema};
+use crate::constants;
+use crate::logging::{ListDirectoryLogEntry, ReadFileLogEntry, WriteFileLogEntry};
+use anyhow::Result;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use anyhow::Result;
+use std::time::Instant;
+use uuid::Uuid;
 
 pub trait AgentTool: Send + Sync + std::fmt::Debug {
     fn name(&self) -> &str;
@@ -60,45 +64,42 @@ impl Default for ToolRegistry {
 // Security utilities for path validation
 fn validate_and_sanitize_path(path: &str) -> Result<PathBuf> {
     let path = Path::new(path);
-    
+
     // Get current working directory as the allowed base
     let current_dir = std::env::current_dir()
         .map_err(|e| anyhow::anyhow!("Cannot determine current directory: {}", e))?;
-    
+
     // Resolve the path (handles . and .. components)
     let canonical_path = if path.is_absolute() {
         path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
     } else {
-        current_dir.join(path).canonicalize().unwrap_or_else(|_| current_dir.join(path))
+        current_dir
+            .join(path)
+            .canonicalize()
+            .unwrap_or_else(|_| current_dir.join(path))
     };
-    
+
     // Ensure the path is within the current directory or its subdirectories
     if !canonical_path.starts_with(&current_dir) {
         return Err(anyhow::anyhow!(
-            "Access denied: Path '{}' is outside allowed directory", 
+            "Access denied: Path '{}' is outside allowed directory",
             path.display()
         ));
     }
-    
+
     // Additional security checks
     let path_str = canonical_path.to_string_lossy();
-    
+
     // Block access to sensitive directories
-    let forbidden_patterns = [
-        "/etc/", "/root/", "/home/", "/var/", "/usr/", "/sys/", "/proc/",
-        "\\Windows\\", "\\System32\\", "\\Users\\", "\\Program Files\\",
-        ".ssh", ".aws", ".config", ".env", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"
-    ];
-    
-    for pattern in &forbidden_patterns {
+    for pattern in constants::FORBIDDEN_PATH_PATTERNS {
         if path_str.contains(pattern) {
             return Err(anyhow::anyhow!(
-                "Access denied: Path contains forbidden pattern '{}'", 
+                "Access denied: Path contains forbidden pattern '{}'",
                 pattern
             ));
         }
     }
-    
+
     Ok(canonical_path)
 }
 
@@ -134,29 +135,76 @@ impl AgentTool for ReadFileTool {
     }
 
     fn execute(&self, input: Value) -> Result<String> {
+        let start_time = Instant::now();
+        let execution_id = Uuid::new_v4().to_string();
+
         let path_str = input
             .get("path")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing or invalid 'path' parameter"))?;
 
+        let mut log_entry = ReadFileLogEntry::new(&execution_id, path_str);
+
         // Validate and sanitize the path
-        let safe_path = validate_and_sanitize_path(path_str)?;
+        let safe_path = match validate_and_sanitize_path(path_str) {
+            Ok(path) => path,
+            Err(e) => {
+                log_entry.base = log_entry
+                    .base
+                    .with_error("path_validation", e.to_string(), false);
+                log_entry.base.execution_time = start_time.elapsed();
+                log_entry.log();
+                return Err(e);
+            }
+        };
 
         // Additional size check to prevent reading huge files
-        if let Ok(metadata) = std::fs::metadata(&safe_path) {
-            const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10MB limit
-            if metadata.len() > MAX_FILE_SIZE {
-                return Err(anyhow::anyhow!(
-                    "File too large: {} bytes (limit: {} bytes)", 
-                    metadata.len(), 
-                    MAX_FILE_SIZE
-                ));
+        let file_size = match std::fs::metadata(&safe_path) {
+            Ok(metadata) => {
+                let size = metadata.len();
+                if size > constants::MAX_FILE_SIZE_BYTES {
+                    let error = anyhow::anyhow!(
+                        "File too large: {} bytes (limit: {} bytes)",
+                        size,
+                        constants::MAX_FILE_SIZE_BYTES
+                    );
+                    log_entry.base =
+                        log_entry
+                            .base
+                            .with_error("file_too_large", error.to_string(), false);
+                    log_entry.base.execution_time = start_time.elapsed();
+                    log_entry.log();
+                    return Err(error);
+                }
+                size
             }
-        }
+            Err(e) => {
+                log_entry.base = log_entry
+                    .base
+                    .with_error("metadata_error", e.to_string(), true);
+                log_entry.base.execution_time = start_time.elapsed();
+                log_entry.log();
+                return Err(anyhow::anyhow!("Failed to read file metadata: {}", e));
+            }
+        };
 
         match std::fs::read_to_string(&safe_path) {
-            Ok(content) => Ok(content),
-            Err(e) => Err(anyhow::anyhow!("Failed to read file '{}': {}", safe_path.display(), e)),
+            Ok(content) => {
+                let duration = start_time.elapsed();
+                log_entry = log_entry.with_success(file_size, &content, duration);
+                log_entry.log();
+                Ok(content)
+            }
+            Err(e) => {
+                log_entry.base = log_entry.base.with_error("read_error", e.to_string(), true);
+                log_entry.base.execution_time = start_time.elapsed();
+                log_entry.log();
+                Err(anyhow::anyhow!(
+                    "Failed to read file '{}': {}",
+                    safe_path.display(),
+                    e
+                ))
+            }
         }
     }
 }
@@ -201,6 +249,9 @@ impl AgentTool for WriteFileTool {
     }
 
     fn execute(&self, input: Value) -> Result<String> {
+        let start_time = Instant::now();
+        let execution_id = Uuid::new_v4().to_string();
+
         let path_str = input
             .get("path")
             .and_then(|v| v.as_str())
@@ -211,39 +262,81 @@ impl AgentTool for WriteFileTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing or invalid 'content' parameter"))?;
 
+        let content_size = content.len() as u64;
+        let mut log_entry = WriteFileLogEntry::new(&execution_id, path_str, content_size);
+
         // Validate and sanitize the path
-        let safe_path = validate_and_sanitize_path(path_str)?;
+        let safe_path = match validate_and_sanitize_path(path_str) {
+            Ok(path) => path,
+            Err(e) => {
+                log_entry.base = log_entry
+                    .base
+                    .with_error("path_validation", e.to_string(), false);
+                log_entry.base.execution_time = start_time.elapsed();
+                log_entry.log();
+                return Err(e);
+            }
+        };
+
+        // Check if file exists
+        let file_existed = safe_path.exists();
+        log_entry.file_existed = file_existed;
 
         // Content size validation
-        const MAX_CONTENT_SIZE: usize = 50 * 1024 * 1024; // 50MB limit
-        if content.len() > MAX_CONTENT_SIZE {
-            return Err(anyhow::anyhow!(
-                "Content too large: {} bytes (limit: {} bytes)", 
-                content.len(), 
-                MAX_CONTENT_SIZE
-            ));
+        if content.len() > constants::MAX_CONTENT_SIZE_BYTES {
+            let error = anyhow::anyhow!(
+                "Content too large: {} bytes (limit: {} bytes)",
+                content.len(),
+                constants::MAX_CONTENT_SIZE_BYTES
+            );
+            log_entry.base =
+                log_entry
+                    .base
+                    .with_error("content_too_large", error.to_string(), false);
+            log_entry.base.execution_time = start_time.elapsed();
+            log_entry.log();
+            return Err(error);
         }
 
         // Check if we're trying to overwrite important files
-        let file_name = safe_path.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
-        
-        let protected_files = [
-            "Cargo.toml", "package.json", ".env", ".gitignore", 
-            "tauri.conf.json", "main.rs", "lib.rs"
-        ];
-        
-        if protected_files.contains(&file_name) {
-            return Err(anyhow::anyhow!(
-                "Access denied: Cannot overwrite protected file '{}'", 
+        let file_name = safe_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+        if constants::PROTECTED_FILES.contains(&file_name) {
+            let error = anyhow::anyhow!(
+                "Access denied: Cannot overwrite protected file '{}'",
                 file_name
-            ));
+            );
+            log_entry.base = log_entry
+                .base
+                .with_error("protected_file", error.to_string(), false);
+            log_entry.base.execution_time = start_time.elapsed();
+            log_entry.log();
+            return Err(error);
         }
 
         match std::fs::write(&safe_path, content) {
-            Ok(_) => Ok(format!("Successfully wrote {} bytes to '{}'", content.len(), safe_path.display())),
-            Err(e) => Err(anyhow::anyhow!("Failed to write file '{}': {}", safe_path.display(), e)),
+            Ok(_) => {
+                let duration = start_time.elapsed();
+                log_entry = log_entry.with_success(file_existed, duration);
+                log_entry.log();
+                Ok(format!(
+                    "Successfully wrote {} bytes to '{}'",
+                    content.len(),
+                    safe_path.display()
+                ))
+            }
+            Err(e) => {
+                log_entry.base = log_entry
+                    .base
+                    .with_error("write_error", e.to_string(), true);
+                log_entry.base.execution_time = start_time.elapsed();
+                log_entry.log();
+                Err(anyhow::anyhow!(
+                    "Failed to write file '{}': {}",
+                    safe_path.display(),
+                    e
+                ))
+            }
         }
     }
 }
@@ -280,49 +373,84 @@ impl AgentTool for ListDirectoryTool {
     }
 
     fn execute(&self, input: Value) -> Result<String> {
+        let start_time = Instant::now();
+        let execution_id = Uuid::new_v4().to_string();
+
         let path_str = input
             .get("path")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing or invalid 'path' parameter"))?;
 
+        let mut log_entry = ListDirectoryLogEntry::new(&execution_id, path_str);
+
         // Validate and sanitize the path
-        let safe_path = validate_and_sanitize_path(path_str)?;
+        let safe_path = match validate_and_sanitize_path(path_str) {
+            Ok(path) => path,
+            Err(e) => {
+                log_entry.base = log_entry
+                    .base
+                    .with_error("path_validation", e.to_string(), false);
+                log_entry.base.execution_time = start_time.elapsed();
+                log_entry.log();
+                return Err(e);
+            }
+        };
 
         match std::fs::read_dir(&safe_path) {
             Ok(entries) => {
                 let mut result = Vec::new();
                 let mut count = 0;
-                const MAX_ENTRIES: usize = 1000; // Limit directory listing
-                
+                let mut file_count = 0;
+                let mut dir_count = 0;
+                const MAX_ENTRIES: usize = constants::MAX_DIRECTORY_ENTRIES;
+
                 for entry in entries {
                     if count >= MAX_ENTRIES {
-                        result.push(format!("... (truncated, showing first {} entries)", MAX_ENTRIES));
+                        result.push(constants::format_directory_truncation_message(MAX_ENTRIES));
                         break;
                     }
-                    
+
                     match entry {
                         Ok(entry) => {
                             let name = entry.file_name().to_string_lossy().to_string();
-                            
+
                             // Skip hidden files and sensitive directories
                             if name.starts_with('.') && !name.eq(".") && !name.eq("..") {
                                 continue;
                             }
-                            
-                            let file_type = if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-                                "directory"
+
+                            let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+                            if is_dir {
+                                dir_count += 1;
+                                result.push(format!("{} (directory)", name));
                             } else {
-                                "file"
-                            };
-                            result.push(format!("{} ({})", name, file_type));
+                                file_count += 1;
+                                result.push(format!("{} (file)", name));
+                            }
                             count += 1;
                         }
                         Err(e) => result.push(format!("Error reading entry: {}", e)),
                     }
                 }
+
+                let duration = start_time.elapsed();
+                log_entry = log_entry.with_success(file_count, dir_count, duration);
+                log_entry.log();
+
                 Ok(result.join("\n"))
             }
-            Err(e) => Err(anyhow::anyhow!("Failed to read directory '{}': {}", safe_path.display(), e)),
+            Err(e) => {
+                log_entry.base = log_entry
+                    .base
+                    .with_error("read_dir_error", e.to_string(), true);
+                log_entry.base.execution_time = start_time.elapsed();
+                log_entry.log();
+                Err(anyhow::anyhow!(
+                    "Failed to read directory '{}': {}",
+                    safe_path.display(),
+                    e
+                ))
+            }
         }
     }
 }
