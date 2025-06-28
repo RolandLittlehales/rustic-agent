@@ -66,6 +66,12 @@ This is a **Tauri v2-based desktop application** providing a chat interface for 
 
 > **Detailed Architecture**: See [`.claude/docs/architecture/`](.claude/docs/architecture/) for comprehensive system design documentation.
 
+### 🏗️ Architecture Documents
+
+- **[System Overview](.claude/docs/architecture/overview.md)** - Comprehensive architecture, components, and design patterns
+- **[Configuration System](.claude/docs/architecture/configuration-system.md)** - Three-tier config architecture and environment integration  
+- **[Security Model](.claude/docs/architecture/security-model.md)** - Security patterns, validation, and access controls
+
 ## 📋 Development Standards Summary
 
 ### 🚨 Critical Principles
@@ -116,7 +122,7 @@ cargo test                    # All tests must pass
 - **Error Sanitization**: Automatic PII/API key redaction in logs
 - **Path Validation**: Canonicalization and traversal attack prevention
 
-> **Detailed Standards**: See [`.claude/docs/development/`](.claude/docs/development/) for comprehensive development guidelines and [PR Review & YAGNI Principles](.claude/learnings/pr-review-and-yagni-principles.md) for code quality learnings.
+> **Detailed Standards**: See [architecture documentation](.claude/docs/architecture/) for system design patterns and [learnings](.claude/learnings/) for battle-tested development practices.
 
 ## ⚙️ Configuration System
 
@@ -153,13 +159,19 @@ state.app_config.validation.validate_message_length(message.len())?;
 | Directory | Content | Purpose |
 |-----------|---------|---------|
 | [**Architecture**](.claude/docs/architecture/) | System design, configuration, security, Tauri patterns | Understanding system structure |
-| [**Development**](.claude/docs/development/) | Workflows, standards, setup, testing, quality gates | Day-to-day development guidance |
-| [**GitHub**](.claude/docs/github/) | Issue templates, PR guidelines, project management | Process and collaboration |
-| [**Learnings**](.claude/docs/learnings/) | Implementation insights, patterns, optimization | Battle-tested wisdom and best practices |
+| [**Commands**](.claude/commands/) | Slash command implementations and documentation | Command reference and usage |
+| [**Learnings**](.claude/learnings/) | Implementation insights, patterns, optimization | Battle-tested wisdom and best practices |
+
+### 📖 Main Documentation
+
+- **[Complete Documentation Index](.claude/docs/README.md)** - Full directory structure and technical documentation overview
+- **[Command Reference Guide](.claude/commands/README.md)** - All 12 slash commands with individual documentation and usage examples
 
 ### 🔍 Key Learning Documents
 
 - **[PR Review & YAGNI Principles](.claude/learnings/pr-review-and-yagni-principles.md)** - Critical lessons from code review process, over-engineering prevention, and quality standards
+- **[LLM Intelligence Principle](.claude/learnings/llm-intelligence-principle.md)** - Agent as assistant, not replacement - core design philosophy
+- **[Tool Response Architecture](.claude/learnings/tool-response-architecture.md)** - Two-step Claude API pattern for proper tool execution
 
 ## 🔧 Development Commands
 
