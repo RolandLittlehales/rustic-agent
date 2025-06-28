@@ -199,7 +199,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_execution_engine() {
-        let mut engine = ToolExecutionEngine::new();
+        let engine = ToolExecutionEngine::new();
         
         // Test with empty engine
         let request = ToolRequest::new("nonexistent".to_string(), serde_json::json!({}));

@@ -42,3 +42,7 @@ async-trait = "0.1"
 # File system watching
 notify = "6.1"
 crossbeam-channel = "0.5"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"

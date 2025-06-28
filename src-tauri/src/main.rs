@@ -386,18 +386,23 @@ async fn stop_file_watching(state: tauri::State<'_, AppState>) -> Result<String,
 }
 
 fn main() {
+    // Initialize logging first
+    if let Err(e) = logging::init() {
+        eprintln!("Failed to initialize logging: {}", e);
+    }
+
     // Load application configuration
     let app_config = AppConfig::load().unwrap_or_else(|e| {
-        eprintln!("Failed to load app config: {}, using defaults", e);
+        log_warn!("config_load", &format!("Failed to load app config: {}, using defaults", e));
         AppConfig::default()
     });
 
     // Check for API key in environment on startup
     let initial_api_key = app_config.runtime.api_key.clone().unwrap_or_default();
     if !initial_api_key.is_empty() {
-        println!(
-            "🔑 Found {} API key in configuration",
-            constants::ENV_CLAUDE_API_KEY
+        log_info!(
+            "startup", 
+            &format!("🔑 Found {} API key in configuration", constants::ENV_CLAUDE_API_KEY)
         );
     }
 
@@ -415,7 +420,7 @@ fn main() {
             // Load whitelist configuration from disk or create default
             let mut whitelist_config = tauri::async_runtime::block_on(async {
                 persistence::load(app.handle()).await.unwrap_or_else(|e| {
-                    eprintln!("Failed to load whitelist config: {}", e);
+                    log_warn!("whitelist_load", &format!("Failed to load whitelist config: {}", e));
                     WhitelistConfig::default()
                 })
             });
@@ -423,12 +428,12 @@ fn main() {
             // Ensure current directory is always accessible by default
             if let Ok(current_dir) = std::env::current_dir() {
                 if whitelist_config.list_directories().is_empty() {
-                    println!(
-                        "📁 Adding current directory to whitelist: {}",
-                        current_dir.display()
+                    log_info!(
+                        "whitelist_setup",
+                        &format!("📁 Adding current directory to whitelist: {}", current_dir.display())
                     );
                     if let Err(e) = whitelist_config.add_directory(&current_dir) {
-                        eprintln!("Failed to add current directory to whitelist: {}", e);
+                        log_error!("whitelist_setup", &format!("Failed to add current directory to whitelist: {}", e));
                     }
                 }
             }

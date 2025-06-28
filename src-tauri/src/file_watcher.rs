@@ -60,7 +60,7 @@ impl FileWatcherService {
             move |res: Result<Event, notify::Error>| {
                 if let Ok(event) = res {
                     if let Err(e) = tx.send(event) {
-                        eprintln!("Failed to send file event: {}", e);
+                        crate::log_error!("file_watcher", &format!("Failed to send file event: {}", e));
                     }
                 }
             },
@@ -112,7 +112,7 @@ impl FileWatcherService {
                 };
 
                 if let Err(e) = app_handle.emit("file_changed", file_event) {
-                    eprintln!("Failed to emit file change event: {}", e);
+                    crate::log_error!("file_watcher", &format!("Failed to emit file change event: {}", e));
                 }
             }
         });
@@ -127,7 +127,7 @@ impl FileWatcherService {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut watchers = self.watchers.write().await;
         if watchers.remove(path).is_some() {
-            println!("🛑 Stopped watching: {}", path.display());
+            crate::log_info!("file_watcher", &format!("🛑 Stopped watching: {}", path.display()));
         }
         Ok(())
     }
@@ -136,7 +136,7 @@ impl FileWatcherService {
         let mut watchers = self.watchers.write().await;
         let count = watchers.len();
         watchers.clear();
-        println!("🛑 Stopped watching {} directories", count);
+        crate::log_info!("file_watcher", &format!("🛑 Stopped watching {} directories", count));
     }
 
     fn is_relevant_event(event: &Event) -> bool {
@@ -177,7 +177,7 @@ impl FileWatcherService {
             loop {
                 interval.tick().await;
                 if let Err(e) = app_handle.emit("heartbeat_refresh", ()) {
-                    eprintln!("Failed to emit heartbeat: {}", e);
+                    crate::log_error!("file_watcher", &format!("Failed to emit heartbeat: {}", e));
                 }
             }
         });

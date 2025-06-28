@@ -19,11 +19,10 @@ pub mod error_handling {
     use super::Duration;
 
     /// Re-export max retries from global config to avoid duplication
-    pub const DEFAULT_MAX_RETRIES: u32 = crate::config::constants::MAX_RETRY_ATTEMPTS;
+    pub use crate::config::constants::MAX_RETRY_ATTEMPTS as DEFAULT_MAX_RETRIES;
 
-    /// Default base delay for exponential backoff in milliseconds
-    /// Starting point for retry delays: 500ms, 1s, 2s, 4s...
-    pub const DEFAULT_BASE_DELAY_MS: u64 = 500;
+    /// Re-export base delay from global config to avoid duplication
+    pub use crate::config::constants::RETRY_BASE_DELAY_MS as DEFAULT_BASE_DELAY_MS;
 
     /// Default maximum delay between retries in seconds
     /// Caps exponential backoff to prevent excessively long waits
@@ -46,7 +45,7 @@ pub mod error_handling {
     pub const DEFAULT_CIRCUIT_TIMEOUT_SECS: u64 = 60;
 
     /// Re-export HTTP timeout from global config to avoid duplication
-    pub const DEFAULT_HTTP_TIMEOUT_SECS: u64 = crate::config::constants::HTTP_TIMEOUT_SECS;
+    pub use crate::config::constants::HTTP_TIMEOUT_SECS as DEFAULT_HTTP_TIMEOUT_SECS;
 
     /// Jitter factor for adding randomness to retry delays (10%)
     /// Prevents thundering herd problems when multiple clients retry simultaneously

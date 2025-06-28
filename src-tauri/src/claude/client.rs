@@ -117,7 +117,11 @@ impl ClaudeClient {
         
         // Rate limiting: ensure minimum interval between requests
         let sleep_duration = {
-            let last_request = self.last_request.lock().unwrap();
+            let last_request = self.last_request.lock()
+                .map_err(|_| ClaudeError::ConfigError {
+                    message: "Rate limiter mutex poisoned".to_string(),
+                    context: Some(ErrorContext::new("rate_limiting_mutex")),
+                })?;
             if let Some(last_time) = *last_request {
                 let elapsed = last_time.elapsed();
                 let min_interval =
@@ -138,7 +142,11 @@ impl ClaudeClient {
 
         // Update last request time
         {
-            let mut last_request = self.last_request.lock().unwrap();
+            let mut last_request = self.last_request.lock()
+                .map_err(|_| ClaudeError::ConfigError {
+                    message: "Rate limiter mutex poisoned".to_string(),
+                    context: Some(ErrorContext::new("rate_limiting_mutex")),
+                })?;
             *last_request = Some(Instant::now());
         }
 
