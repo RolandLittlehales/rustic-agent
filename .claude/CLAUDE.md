@@ -76,6 +76,28 @@ This is a **Tauri v2-based desktop application** providing a chat interface for 
 4. **Tauri v2 Discipline**: Always use object parameters, verify signatures
 5. **Fast Feedback**: Build early and often to catch issues immediately
 
+### 🎯 Code Quality Standards (YAGNI/DRY/KISS)
+
+**YAGNI (You Aren't Gonna Need It)**:
+- No extensive documentation for simple features
+- No complex configuration "for future flexibility" 
+- No elaborate abstractions without proven need
+
+**DRY (Don't Repeat Yourself)**:
+- Centralized constants (no duplication across modules)
+- Re-export from single source of truth
+- Shared error handling patterns
+
+**KISS (Keep It Simple)**:
+- Simple solutions over complex abstractions
+- Clear module names and organization
+- Functions over complex macro systems
+
+**Safety Patterns**:
+- Never use `.unwrap()` in production → Use proper error handling
+- Centralize configuration → No hardcoded values
+- Sanitize sensitive data → API keys, paths, PII
+
 ### ⚡ Quality Gates
 
 **Before Any Commit**:
@@ -94,7 +116,7 @@ cargo test                    # All tests must pass
 - **Error Sanitization**: Automatic PII/API key redaction in logs
 - **Path Validation**: Canonicalization and traversal attack prevention
 
-> **Detailed Standards**: See [`.claude/docs/development/`](.claude/docs/development/) for comprehensive development guidelines.
+> **Detailed Standards**: See [`.claude/docs/development/`](.claude/docs/development/) for comprehensive development guidelines and [PR Review & YAGNI Principles](.claude/learnings/pr-review-and-yagni-principles.md) for code quality learnings.
 
 ## ⚙️ Configuration System
 
@@ -134,6 +156,10 @@ state.app_config.validation.validate_message_length(message.len())?;
 | [**Development**](.claude/docs/development/) | Workflows, standards, setup, testing, quality gates | Day-to-day development guidance |
 | [**GitHub**](.claude/docs/github/) | Issue templates, PR guidelines, project management | Process and collaboration |
 | [**Learnings**](.claude/docs/learnings/) | Implementation insights, patterns, optimization | Battle-tested wisdom and best practices |
+
+### 🔍 Key Learning Documents
+
+- **[PR Review & YAGNI Principles](.claude/learnings/pr-review-and-yagni-principles.md)** - Critical lessons from code review process, over-engineering prevention, and quality standards
 
 ## 🔧 Development Commands
 
