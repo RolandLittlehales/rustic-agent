@@ -10,9 +10,33 @@ use crate::claude::{
     tools::{execution::ToolExecutionResult, AgentTool},
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+/// Extract file/directory path from tool input for logging context
+fn extract_path_from_input(tool_name: &str, input: &Value) -> Option<String> {
+    if let Value::Object(obj) = input {
+        match tool_name {
+            "read_file" | "write_file" => {
+                // These tools use "path" parameter
+                obj.get("path")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            }
+            "list_directory" => {
+                // List directory tool uses "path" parameter
+                obj.get("path")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            }
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
 
 /// Minimal tool request for single tool execution
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,7 +114,13 @@ impl ToolExecutionEngine {
                 Ok(result) => {
                     let execution_time = start_time.elapsed();
                     
-                    crate::log_tool_execution!(&request.tool_name, true, execution_time);
+                    // Extract file/directory path from input for better logging
+                    let context_path = extract_path_from_input(&request.tool_name, &request.input);
+                    if let Some(path) = context_path {
+                        crate::log_tool_execution!(&request.tool_name, true, execution_time, &path);
+                    } else {
+                        crate::log_tool_execution!(&request.tool_name, true, execution_time);
+                    }
                     
                     return Ok(ToolExecutionResult::success(
                         context.execution_id,
@@ -102,7 +132,13 @@ impl ToolExecutionEngine {
                     if attempt_count >= max_retries {
                         let execution_time = start_time.elapsed();
                         
-                        crate::log_tool_execution!(&request.tool_name, false, execution_time);
+                        // Extract file/directory path from input for better logging
+                        let context_path = extract_path_from_input(&request.tool_name, &request.input);
+                        if let Some(path) = context_path {
+                            crate::log_tool_execution!(&request.tool_name, false, execution_time, &path);
+                        } else {
+                            crate::log_tool_execution!(&request.tool_name, false, execution_time);
+                        }
                         
                         let tool_error = crate::claude::tools::execution::ToolError::validation_error(e.to_string());
                         return Ok(ToolExecutionResult::failure(

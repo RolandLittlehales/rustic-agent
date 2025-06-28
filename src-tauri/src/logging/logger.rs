@@ -314,16 +314,41 @@ impl Logger {
         tool_name: impl Into<String>,
         success: bool,
         duration: Duration,
+        context: Option<&str>,
     ) {
         let tool_name_str = tool_name.into();
         let result = if success { "success" } else { "failure" };
         
-        // Create a cleaner message based on the tool
+        // Create a cleaner message based on the tool and context
         let message = match tool_name_str.as_str() {
-            "list_directory" => "Listed directory contents",
-            "read_file" => "Read file contents",
-            "write_file" => "Wrote file contents",
-            _ => "Executed tool",
+            "list_directory" => {
+                if let Some(path) = context {
+                    format!("Listed directory: {}", path)
+                } else {
+                    "Listed directory contents".to_string()
+                }
+            },
+            "read_file" => {
+                if let Some(path) = context {
+                    format!("Read file: {}", path)
+                } else {
+                    "Read file contents".to_string()
+                }
+            },
+            "write_file" => {
+                if let Some(path) = context {
+                    format!("Wrote file: {}", path)
+                } else {
+                    "Wrote file contents".to_string()
+                }
+            },
+            _ => {
+                if let Some(ctx) = context {
+                    format!("Executed tool: {}", ctx)
+                } else {
+                    "Executed tool".to_string()
+                }
+            }
         };
         
         let entry = LogEntry::new(
@@ -348,9 +373,21 @@ impl Logger {
         tokens: u32,
         cost: f64,
         duration: Duration,
+        user_message: Option<&str>,
     ) {
         let model_str = model.into();
-        let message = format!("{} ({} tokens, ${:.4})", model_str, tokens, cost);
+        
+        let message = if let Some(msg) = user_message {
+            // Truncate message if too long for logging
+            let truncated_msg = if msg.len() > 100 {
+                format!("{}...", &msg[..97])
+            } else {
+                msg.to_string()
+            };
+            format!("{} ({} tokens, ${:.4}) - Message: \"{}\"", model_str, tokens, cost, truncated_msg)
+        } else {
+            format!("{} ({} tokens, ${:.4})", model_str, tokens, cost)
+        };
         
         let entry = LogEntry::new(
             LogLevel::Info,

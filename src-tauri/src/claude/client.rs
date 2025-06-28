@@ -113,6 +113,8 @@ impl ClaudeClient {
     }
 
     async fn make_api_call(&self, request: ClaudeRequest) -> ClaudeResult<ClaudeResponse> {
+        let start_time = Instant::now();
+        
         // Rate limiting: ensure minimum interval between requests
         let sleep_duration = {
             let last_request = self.last_request.lock().unwrap();
@@ -173,6 +175,52 @@ impl ClaudeClient {
         }
 
         let claude_response: ClaudeResponse = response.json().await?;
+
+        // Extract user message for logging (just the latest user message)
+        let user_message = request.messages
+            .iter()
+            .rev()
+            .find(|msg| matches!(msg.role, crate::claude::types::MessageRole::User))
+            .and_then(|msg| {
+                // Extract text content from the message
+                msg.content
+                    .iter()
+                    .filter_map(|content| {
+                        if let crate::claude::types::ContentBlock::Text { text } = content {
+                            Some(text.as_str())
+                        } else {
+                            None
+                        }
+                    })
+                    .next()
+            });
+
+        // Calculate rough token count and cost (these are estimates)
+        let input_tokens = claude_response.usage.input_tokens;
+        let output_tokens = claude_response.usage.output_tokens;
+        let total_tokens = input_tokens + output_tokens;
+        
+        // Rough cost calculation (approximate Claude 4 Sonnet pricing)
+        let cost = (input_tokens as f64 * 0.000003) + (output_tokens as f64 * 0.000015);
+        
+        // Log the API call with timing
+        let api_duration = start_time.elapsed();
+        if let Some(msg) = user_message {
+            crate::log_claude_api!(
+                &self.config.model,
+                total_tokens,
+                cost,
+                api_duration,
+                msg
+            );
+        } else {
+            crate::log_claude_api!(
+                &self.config.model,
+                total_tokens,
+                cost,
+                api_duration
+            );
+        }
 
         Ok(claude_response)
     }

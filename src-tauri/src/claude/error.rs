@@ -146,22 +146,25 @@ impl ErrorContext {
 
     /// Log successful operation for telemetry
     pub fn log_success(&self, duration: Option<std::time::Duration>) {
-        let mut context = std::collections::HashMap::new();
-        context.insert("retry_count".to_string(), self.retry_count.to_string());
+        // Only log if there were actual retries
+        if self.retry_count > 0 {
+            let mut context = std::collections::HashMap::new();
+            context.insert("retry_count".to_string(), self.retry_count.to_string());
 
-        if let Some(duration) = duration {
-            context.insert("duration_ms".to_string(), duration.as_millis().to_string());
+            if let Some(duration) = duration {
+                context.insert("duration_ms".to_string(), duration.as_millis().to_string());
+            }
+
+            if let Some(message_id) = &self.message_id {
+                context.insert("message_id".to_string(), message_id.clone());
+            }
+
+            if let Some(tool_use_id) = &self.tool_use_id {
+                context.insert("tool_use_id".to_string(), tool_use_id.clone());
+            }
+
+            crate::log_info!("RETRY", &format!("Success after {} retries", self.retry_count), context);
         }
-
-        if let Some(message_id) = &self.message_id {
-            context.insert("message_id".to_string(), message_id.clone());
-        }
-
-        if let Some(tool_use_id) = &self.tool_use_id {
-            context.insert("tool_use_id".to_string(), tool_use_id.clone());
-        }
-
-        crate::log_info!(&self.operation, "Success", context);
     }
 
     /// Log initial failure that will be retried as warning

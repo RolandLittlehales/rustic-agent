@@ -91,7 +91,10 @@ macro_rules! log_trace {
 #[macro_export]
 macro_rules! log_tool_execution {
     ($tool:expr, $result:expr, $duration:expr) => {
-        $crate::logging::logger().log_tool_execution($tool, $result, $duration)
+        $crate::logging::logger().log_tool_execution($tool, $result, $duration, None)
+    };
+    ($tool:expr, $result:expr, $duration:expr, $context:expr) => {
+        $crate::logging::logger().log_tool_execution($tool, $result, $duration, Some($context))
     };
 }
 
@@ -99,7 +102,10 @@ macro_rules! log_tool_execution {
 #[macro_export]
 macro_rules! log_claude_api {
     ($model:expr, $tokens:expr, $cost:expr, $duration:expr) => {
-        $crate::logging::logger().log_claude_api($model, $tokens, $cost, $duration)
+        $crate::logging::logger().log_claude_api($model, $tokens, $cost, $duration, None)
+    };
+    ($model:expr, $tokens:expr, $cost:expr, $duration:expr, $message:expr) => {
+        $crate::logging::logger().log_claude_api($model, $tokens, $cost, $duration, Some($message))
     };
 }
 
