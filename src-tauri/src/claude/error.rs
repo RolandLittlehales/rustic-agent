@@ -107,14 +107,6 @@ impl ErrorContext {
         }
     }
 
-    /// Sanitize ID fields to show only prefix for debugging while protecting privacy
-    fn sanitize_id(id: &str) -> String {
-        if id.len() > 8 {
-            format!("{}...[REDACTED]", &id[..8])
-        } else {
-            id.to_string()
-        }
-    }
 
     /// Sanitize metadata to remove sensitive information
     fn sanitize_metadata(&self) -> HashMap<String, String> {
@@ -189,26 +181,6 @@ impl ErrorContext {
         );
     }
 
-    /// Log retry attempt for monitoring
-    pub fn log_retry(&self, attempt: u32, delay: std::time::Duration) {
-        let mut context = std::collections::HashMap::new();
-        context.insert("attempt".to_string(), attempt.to_string());
-        context.insert("delay_ms".to_string(), delay.as_millis().to_string());
-
-        if let Some(message_id) = &self.message_id {
-            context.insert("message_id".to_string(), message_id.clone());
-        }
-
-        if let Some(tool_use_id) = &self.tool_use_id {
-            context.insert("tool_use_id".to_string(), tool_use_id.clone());
-        }
-
-        crate::log_warn!(
-            &self.operation,
-            &format!("Retrying operation (attempt {})", attempt),
-            context
-        );
-    }
 
     #[allow(dead_code)]
     pub fn with_message_id(mut self, message_id: impl Into<String>) -> Self {
@@ -978,12 +950,6 @@ mod tests {
             assert_eq!(ErrorContext::sanitize_error_message(input), expected);
         }
 
-        // Test ID sanitization
-        assert_eq!(
-            ErrorContext::sanitize_id("msg_1234567890abcdef"),
-            "msg_1234...[REDACTED]"
-        );
-        assert_eq!(ErrorContext::sanitize_id("short"), "short");
 
         // Test message truncation
         let long_msg = "Error: ".to_string() + &"x".repeat(1100);

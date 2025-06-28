@@ -1,17 +1,14 @@
-//! Enhanced tool execution system with comprehensive result handling,
-//! feedback loops, error recovery, and tool chain management.
+//! Simple tool execution system
 //!
-//! This module provides a robust foundation for tool execution that goes beyond
-//! simple string-based results to provide structured data, comprehensive error
-//! handling, and intelligent recovery mechanisms.
+//! Provides a minimal tool execution framework following YAGNI principles.
 
 pub mod execution;
-pub mod simple_execution;
 
 // Re-export main types for convenience
-pub use execution::ToolExecutionContext;
-pub use simple_execution::{ToolExecutionEngine, ToolRequest};
-pub use execution::{ToolExecutionResult, ToolResultData, ToolResultMetadata};
+pub use execution::{
+    ToolExecutionContext, ToolExecutionEngine,
+    ToolRequest, ToolResultMetadata
+};
 
 // Re-export existing tool types for backward compatibility
 use crate::claude::types::{PropertySchema, Tool, ToolInputSchema};
@@ -50,16 +47,6 @@ impl ToolRegistry {
         self.tools.insert(name, Box::new(tool));
     }
 
-    pub fn get_tool(&self, name: &str) -> Option<&dyn AgentTool> {
-        self.tools.get(name).map(|tool| tool.as_ref())
-    }
-
-    pub async fn execute_tool(&self, name: &str, input: Value) -> Result<String> {
-        match self.get_tool(name) {
-            Some(tool) => tool.execute(input).await,
-            None => Err(anyhow::anyhow!("Tool '{}' not found", name)),
-        }
-    }
 
     pub fn get_all_tools(&self) -> Vec<Tool> {
         self.tools
