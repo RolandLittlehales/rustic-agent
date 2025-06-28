@@ -446,14 +446,12 @@ impl SecuritySanitizer {
     pub fn sanitize_message(message: &str) -> String {
         let mut sanitized = message.to_string();
 
-        // Remove API keys
-        Self::redact_pattern(&mut sanitized, "sk-ant-", "[API_KEY_REDACTED]");
-        Self::redact_pattern(&mut sanitized, "sk-", "[API_KEY_REDACTED]");
+        // Only redact API keys with proper formatting: abc...xyz
+        Self::redact_api_keys(&mut sanitized);
 
-        // Remove file paths with sensitive locations
-        for sensitive_path in &["/home/", "/Users/", "C:\\Users\\"] {
-            Self::redact_file_path(&mut sanitized, sensitive_path);
-        }
+        // Don't redact file paths - they're useful for debugging
+        // Only redact truly sensitive paths like system directories with passwords
+        // Most project paths are safe to log
 
         // Truncate very long messages
         if sanitized.len() > crate::claude::constants::error_handling::MAX_ERROR_MESSAGE_LENGTH {
@@ -471,19 +469,17 @@ impl SecuritySanitizer {
     pub fn sanitize_metadata_value(key: &str, value: &str) -> String {
         let key_lower = key.to_lowercase();
 
-        // Redact sensitive keys
-        if key_lower.contains("key")
-            || key_lower.contains("secret")
-            || key_lower.contains("token")
-            || key_lower.contains("password")
+        // Only redact actual sensitive keys, not words that contain "key"
+        if key_lower == "api_key" 
+            || key_lower == "secret" 
+            || key_lower == "password"
+            || key_lower == "auth_token"
         {
-            return "[REDACTED]".to_string();
+            return Self::format_api_key(value);
         }
 
-        // Sanitize paths
-        if key_lower.contains("path") || key_lower.contains("file") {
-            return Self::sanitize_message(value);
-        }
+        // Don't redact "tokens", "cost", "model" etc - these are useful metrics
+        // Don't redact file paths - they're needed for debugging
 
         // Truncate long values
         if value.len() > crate::claude::constants::error_handling::MAX_METADATA_VALUE_LENGTH {
@@ -496,31 +492,55 @@ impl SecuritySanitizer {
         }
     }
 
-    /// Redact a specific pattern from the string
-    fn redact_pattern(text: &mut String, pattern: &str, replacement: &str) {
-        while let Some(start) = text.find(pattern) {
+    /// Format API key as <first 3>...<last 3>
+    fn format_api_key(api_key: &str) -> String {
+        if api_key.len() <= 6 {
+            return "[REDACTED]".to_string();
+        }
+        format!("{}...{}", &api_key[..3], &api_key[api_key.len()-3..])
+    }
+
+    /// Redact API keys in text with proper formatting
+    fn redact_api_keys(text: &mut String) {
+        // Process Claude API keys (sk-ant-...)
+        let mut search_pos = 0;
+        while let Some(relative_start) = text[search_pos..].find("sk-ant-") {
+            let start = search_pos + relative_start;
             let end = text[start..]
                 .find(|c: char| {
                     c.is_whitespace() || c == '"' || c == '\'' || c == ',' || c == '}' || c == ']'
                 })
                 .map(|i| start + i)
                 .unwrap_or(text.len());
-            text.replace_range(start..end, replacement);
+            
+            let api_key = &text[start..end];
+            let formatted = Self::format_api_key(api_key);
+            text.replace_range(start..end, &formatted);
+            search_pos = start + formatted.len();
         }
-    }
 
-    /// Redact file paths starting with sensitive directories
-    fn redact_file_path(text: &mut String, sensitive_path: &str) {
-        while let Some(start) = text.find(sensitive_path) {
-            // Find the end of the path (next whitespace or path separator)
-            let search_from = start + sensitive_path.len();
-            let end = text[search_from..]
+        // Process other API keys (sk-...) but skip ones already processed
+        search_pos = 0;
+        while let Some(relative_start) = text[search_pos..].find("sk-") {
+            let start = search_pos + relative_start;
+            
+            // Skip if it's part of already formatted key (...sk-)
+            if start > 3 && &text[start-3..start] == "..." {
+                search_pos = start + 3;
+                continue;
+            }
+            
+            let end = text[start..]
                 .find(|c: char| {
                     c.is_whitespace() || c == '"' || c == '\'' || c == ',' || c == '}' || c == ']'
                 })
-                .map(|i| search_from + i)
+                .map(|i| start + i)
                 .unwrap_or(text.len());
-            text.replace_range(start..end, "/[USER_DIR_REDACTED]");
+            
+            let api_key = &text[start..end];
+            let formatted = Self::format_api_key(api_key);
+            text.replace_range(start..end, &formatted);
+            search_pos = start + formatted.len();
         }
     }
 }

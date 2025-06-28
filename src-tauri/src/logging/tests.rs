@@ -66,51 +66,61 @@ fn test_logger_level_filtering() {
 
 #[test]
 fn test_security_sanitizer_api_keys() {
-    // Test API key redaction
-    let sensitive = "Using API key sk-ant-12345 for authentication";
+    // Test API key redaction with proper formatting
+    let sensitive = "Using API key sk-ant-api03_UlOFTawJt5Lj09zH8FwcX7P3jQ2kFRz for authentication";
     let sanitized = logger::SecuritySanitizer::sanitize_message(sensitive);
-    assert!(!sanitized.contains("sk-ant-12345"));
-    assert!(sanitized.contains("[API_KEY_REDACTED]"));
+    assert!(!sanitized.contains("sk-ant-api03_UlOFTawJt5Lj09zH8FwcX7P3jQ2kFRz"));
+    assert!(sanitized.contains("sk-...FRz"));
     
     // Test multiple API keys
-    let multiple = "Key1: sk-ant-111 and Key2: sk-ant-222";
+    let multiple = "Key1: sk-ant-111222333 and Key2: sk-ant-aaabbbccc";
     let sanitized = logger::SecuritySanitizer::sanitize_message(multiple);
-    assert!(!sanitized.contains("sk-ant-111"));
-    assert!(!sanitized.contains("sk-ant-222"));
-    assert_eq!(sanitized.matches("[API_KEY_REDACTED]").count(), 2);
+    assert!(!sanitized.contains("sk-ant-111222333"));
+    assert!(!sanitized.contains("sk-ant-aaabbbccc"));
+    assert!(sanitized.contains("sk-...333"));
+    assert!(sanitized.contains("sk-...ccc"));
 }
 
 #[test]
-fn test_security_sanitizer_file_paths() {
-    // Test sensitive path redaction
-    let sensitive_paths = vec![
-        "/home/user/secret.txt",
-        "/Users/admin/config.json",
-        "C:\\Users\\test\\file.dat",
+fn test_security_sanitizer_preserves_file_paths() {
+    // Test that file paths are preserved (not redacted)
+    let file_paths = vec![
+        "/home/user/project/config.json",
+        "/Users/admin/app/settings.toml",
+        "C:\\Users\\test\\project\\file.dat",
+        "target/debug/app.exe",
+        "./src/main.rs",
     ];
     
-    for path in sensitive_paths {
+    for path in file_paths {
         let sanitized = logger::SecuritySanitizer::sanitize_message(path);
-        assert!(sanitized.contains("[USER_DIR_REDACTED]"));
-        assert!(!sanitized.contains("user"));
-        assert!(!sanitized.contains("admin"));
-        assert!(!sanitized.contains("test"));
+        assert_eq!(sanitized, path); // Should be unchanged
     }
 }
 
 #[test]
 fn test_security_sanitizer_metadata() {
-    // Test sensitive metadata key redaction
-    let sensitive_keys = vec!["api_key", "secret", "token", "password"];
+    // Test actual sensitive metadata keys
+    let api_key_value = "sk-ant-12345abcdefg";
+    let sanitized = logger::SecuritySanitizer::sanitize_metadata_value("api_key", api_key_value);
+    assert!(sanitized.contains("sk-...efg"));
+    assert!(!sanitized.contains("12345abcdefg"));
     
-    for key in sensitive_keys {
-        let sanitized = logger::SecuritySanitizer::sanitize_metadata_value(key, "sensitive_value");
-        assert_eq!(sanitized, "[REDACTED]");
+    // Test that common logging words are NOT redacted
+    let safe_keys = vec![
+        ("tokens", "1500"),
+        ("cost", "$0.0045"), 
+        ("model", "claude-4-sonnet"),
+        ("operation", "read_file"),
+        ("tool", "list_directory"),
+        ("result", "success"),
+        ("duration_ms", "123"),
+    ];
+    
+    for (key, value) in safe_keys {
+        let sanitized = logger::SecuritySanitizer::sanitize_metadata_value(key, value);
+        assert_eq!(sanitized, value); // Should be unchanged
     }
-    
-    // Test safe metadata
-    let safe = logger::SecuritySanitizer::sanitize_metadata_value("operation", "test_op");
-    assert_eq!(safe, "test_op");
 }
 
 #[test]
