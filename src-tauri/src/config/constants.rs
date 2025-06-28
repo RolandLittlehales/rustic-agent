@@ -41,17 +41,18 @@ pub const fn claude_messages_url() -> &'static str {
 // ============================================================================
 
 /// Available Claude models (ordered by preference)
+/// Re-exports from claude::constants to maintain single source of truth
 pub const SUPPORTED_MODELS: &[&str] = &[
-    "claude-sonnet-4-20250514",
-    "claude-3-5-sonnet-20241022",
-    "claude-3-5-haiku-20241022",
-    "claude-3-opus-20240229",
-    "claude-3-sonnet-20240229",
-    "claude-3-haiku-20240307",
+    crate::claude::constants::model_ids::CLAUDE_4_SONNET,
+    crate::claude::constants::model_ids::CLAUDE_3_5_SONNET_LATEST,
+    crate::claude::constants::model_ids::CLAUDE_3_5_HAIKU,
+    crate::claude::constants::model_ids::CLAUDE_3_OPUS,
+    "claude-3-sonnet-20240229", // Keep legacy model for compatibility
+    crate::claude::constants::model_ids::CLAUDE_3_HAIKU,
 ];
 
-/// Default model selection
-pub const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
+/// Default model selection - uses latest Claude 4 Sonnet
+pub const DEFAULT_MODEL: &str = crate::claude::constants::model_ids::CLAUDE_4_SONNET;
 
 /// Model capabilities mapping
 #[allow(dead_code)]
@@ -69,7 +70,7 @@ pub struct ModelInfo {
 #[allow(dead_code)]
 pub fn get_model_info(model: &str) -> Option<ModelInfo> {
     match model {
-        "claude-sonnet-4-20250514" => Some(ModelInfo {
+        crate::claude::constants::model_ids::CLAUDE_4_SONNET => Some(ModelInfo {
             family: "claude-4",
             variant: "sonnet",
             max_tokens: 200000,
@@ -300,7 +301,7 @@ pub const fn secs_to_duration(secs: u64) -> Duration {
 /// Check if a model supports thinking
 #[allow(dead_code)]
 pub fn model_supports_thinking(model: &str) -> bool {
-    matches!(model, "claude-sonnet-4-20250514")
+    matches!(model, crate::claude::constants::model_ids::CLAUDE_4_SONNET)
 }
 
 /// Check if a model is Claude 4

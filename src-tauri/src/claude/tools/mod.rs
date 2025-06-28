@@ -5,22 +5,13 @@
 //! simple string-based results to provide structured data, comprehensive error
 //! handling, and intelligent recovery mechanisms.
 
-pub mod chain;
 pub mod execution;
-pub mod feedback;
-pub mod recovery;
+pub mod simple_execution;
 
 // Re-export main types for convenience
-pub use execution::{FollowUpAction, StatusLevel, ToolExecutionContext};
-
-// Reserved for future integration with Claude client
-pub use chain::{ToolExecutionEngine, ToolRequest};
-#[allow(unused_imports)]
+pub use execution::ToolExecutionContext;
+pub use simple_execution::{ToolExecutionEngine, ToolRequest};
 pub use execution::{ToolExecutionResult, ToolResultData, ToolResultMetadata};
-#[allow(unused_imports)]
-pub use feedback::FeedbackManager;
-#[allow(unused_imports)]
-pub use recovery::ToolRecoveryManager;
 
 // Re-export existing tool types for backward compatibility
 use crate::claude::types::{PropertySchema, Tool, ToolInputSchema};

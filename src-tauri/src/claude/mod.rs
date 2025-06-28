@@ -4,6 +4,7 @@ use crate::claude::types::{ContentBlock, MessageRole};
 use serde::{Deserialize, Serialize};
 
 pub mod client;
+pub mod connection_pool;
 pub mod constants;
 pub mod error;
 pub mod message;

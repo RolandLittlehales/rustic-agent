@@ -16,6 +16,10 @@ class DevAgentApp {
 
         this.isProcessing = false;
         this.messageHistory = [];
+        
+        // Store event listeners for cleanup
+        this.eventListeners = new Map();
+        this.mutationObserver = null;
 
         this.init();
     }
@@ -116,12 +120,12 @@ class DevAgentApp {
         });
 
         // Auto-scroll to bottom when new messages are added
-        const observer = new MutationObserver(() => {
+        this.mutationObserver = new MutationObserver(() => {
             this.scrollToBottom();
         });
 
         if (this.chatMessages) {
-            observer.observe(this.chatMessages, { childList: true });
+            this.mutationObserver.observe(this.chatMessages, { childList: true });
         }
     }
 
@@ -634,6 +638,46 @@ class DevAgentApp {
     getMessageHistory() {
         return [...this.messageHistory];
     }
+
+    /**
+     * Cleanup method to prevent resource leaks
+     * Should be called when the app is being destroyed or page is unloaded
+     */
+    cleanup() {
+        // Stop file watching
+        if (window.__TAURI__ && window.__TAURI__.core) {
+            this.stopFileWatching().catch(err => 
+                console.warn('Failed to stop file watching during cleanup:', err)
+            );
+        }
+
+        // Clear debounce timeout
+        if (this.fileTreeRefreshTimeout) {
+            clearTimeout(this.fileTreeRefreshTimeout);
+            this.fileTreeRefreshTimeout = null;
+        }
+
+        // Disconnect mutation observer
+        if (this.mutationObserver) {
+            this.mutationObserver.disconnect();
+            this.mutationObserver = null;
+        }
+
+        // Clear stored event listeners if we had tracked them
+        if (this.eventListeners) {
+            this.eventListeners.clear();
+        }
+
+        // Clear message history to free memory
+        this.messageHistory = [];
+
+        // Clear chat messages from DOM
+        if (this.chatMessages) {
+            this.chatMessages.innerHTML = '';
+        }
+
+        console.log('🧹 DevAgentApp cleanup completed');
+    }
 }
 
 // Initialize the application when DOM is loaded
@@ -643,6 +687,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize UX enhancements if available
     if (typeof UXEnhancements !== 'undefined') {
         window.uxEnhancements = new UXEnhancements(window.devAgent);
+    }
+});
+
+// Add cleanup on page unload to prevent resource leaks
+window.addEventListener('beforeunload', () => {
+    if (window.devAgent && typeof window.devAgent.cleanup === 'function') {
+        window.devAgent.cleanup();
     }
 });
 

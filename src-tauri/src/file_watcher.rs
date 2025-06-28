@@ -33,13 +33,19 @@ impl FileWatcherService {
         &self,
         path: PathBuf,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        println!("👁️ Starting to watch directory: {}", path.display());
+        crate::log_info!(
+            "FILE_WATCH",
+            &format!("Watching: {}", path.display())
+        );
 
         // Check if already watching this path
         {
             let watchers = self.watchers.read().await;
             if watchers.contains_key(&path) {
-                println!("⚠️ Already watching path: {}", path.display());
+                crate::log_warn!(
+                    "FILE_WATCH",
+                    &format!("Already watching: {}", path.display())
+                );
                 return Ok(());
             }
         }
