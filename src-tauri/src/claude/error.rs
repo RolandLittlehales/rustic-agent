@@ -161,7 +161,29 @@ impl ErrorContext {
             context.insert("tool_use_id".to_string(), tool_use_id.clone());
         }
 
-        crate::log_info!(&self.operation, "Operation completed successfully", context);
+        crate::log_info!(&self.operation, "Success", context);
+    }
+
+    /// Log initial failure that will be retried as warning
+    pub fn log_initial_failure(&self, error: &ClaudeError, next_attempt: u32, delay: std::time::Duration) {
+        let mut context = std::collections::HashMap::new();
+        context.insert("next_attempt".to_string(), next_attempt.to_string());
+        context.insert("delay_ms".to_string(), delay.as_millis().to_string());
+        context.insert("error_type".to_string(), error.error_type());
+
+        if let Some(message_id) = &self.message_id {
+            context.insert("message_id".to_string(), message_id.clone());
+        }
+
+        if let Some(tool_use_id) = &self.tool_use_id {
+            context.insert("tool_use_id".to_string(), tool_use_id.clone());
+        }
+
+        crate::log_warn!(
+            "RETRY",
+            &format!("Initial failure (attempt {} in {}ms): {}", next_attempt, delay.as_millis(), error),
+            context
+        );
     }
 
     /// Log retry attempt for monitoring
@@ -340,6 +362,23 @@ impl ClaudeError {
             _ => {}
         }
         self
+    }
+
+    /// Get the error type as a string for logging
+    pub fn error_type(&self) -> String {
+        match self {
+            ClaudeError::ApiError { .. } => "api_error",
+            ClaudeError::ModelError { .. } => "model_error",
+            ClaudeError::ContentBlockError { .. } => "content_block_error",
+            ClaudeError::ToolError { .. } => "tool_error",
+            ClaudeError::ConfigError { .. } => "config_error",
+            ClaudeError::ValidationError { .. } => "validation_error",
+            ClaudeError::StreamingError { .. } => "streaming_error",
+            ClaudeError::TimeoutError { .. } => "timeout_error",
+            ClaudeError::RateLimitError { .. } => "rate_limit_error",
+            ClaudeError::HttpError(_) => "http_error",
+            ClaudeError::JsonError(_) => "json_error",
+        }.to_string()
     }
 
     pub fn is_retryable(&self) -> bool {
@@ -784,16 +823,21 @@ impl ErrorHandler {
                     }
                     self.telemetry.record_error(error_type);
 
+                    // Check if this is a final failure or if we should retry
                     if !error.is_retryable() || attempt == self.config.max_retries {
+                        // Final failure - log as error
                         context.log_error(&error);
                         return Err(error);
                     }
 
-                    // Log retry attempt
+                    // Initial failure that will be retried - log as warning
                     if attempt < self.config.max_retries {
                         self.telemetry.record_retry();
                         let delay = self.calculate_delay(attempt, &error);
-                        context.log_retry(attempt + 1, delay);
+                        
+                        // Log initial failure as warning since we'll retry
+                        context.log_initial_failure(&error, attempt + 1, delay);
+                        
                         tokio::time::sleep(delay).await;
                     }
 

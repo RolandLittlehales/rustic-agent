@@ -88,24 +88,11 @@ impl ConnectionPool {
             .build()?;
 
         crate::log_info!(
-            "connection_pool",
-            "Created new HTTP client with connection pooling",
-            {
-                let mut context = std::collections::HashMap::new();
-                context.insert(
-                    "max_idle_per_host".to_string(),
-                    self.config.max_idle_per_host.to_string(),
-                );
-                context.insert(
-                    "idle_timeout_secs".to_string(),
-                    self.config.idle_timeout.as_secs().to_string(),
-                );
-                context.insert(
-                    "connect_timeout_secs".to_string(),
-                    self.config.connect_timeout.as_secs().to_string(),
-                );
-                context
-            }
+            "HTTP_POOL",
+            &format!("Created connection pool (max_idle: {}, timeout: {}s)", 
+                self.config.max_idle_per_host,
+                self.config.request_timeout.as_secs()
+            )
         );
 
         *client_guard = Some(client.clone());
@@ -117,7 +104,7 @@ impl ConnectionPool {
         let mut client_guard = self.client.write().await;
         *client_guard = None;
 
-        crate::log_info!("connection_pool", "Connection pool reset");
+        crate::log_info!("HTTP_POOL", "Pool reset");
     }
 
     /// Get pool statistics for monitoring

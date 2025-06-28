@@ -48,9 +48,9 @@ impl LogLevel {
         match self {
             LogLevel::Trace => "🔍",
             LogLevel::Debug => "🐛",
-            LogLevel::Info => "ℹ️",
-            LogLevel::Warn => "⚠️",
-            LogLevel::Error => "🚨",
+            LogLevel::Info => "✓",
+            LogLevel::Warn => "⚠",
+            LogLevel::Error => "✗",
         }
     }
 }
@@ -105,32 +105,71 @@ impl LogEntry {
 
     /// Format the log entry for output
     pub fn format(&self) -> String {
-        let mut parts = vec![
-            format!("{}", self.level.emoji()),
-            format!("[{}]", self.level),
-            format!("operation={}", self.operation),
-            format!(
-                "message=\"{}\"",
-                SecuritySanitizer::sanitize_message(&self.message)
-            ),
-            format!(
-                "timestamp={}",
-                self.timestamp.format("%Y-%m-%d %H:%M:%S UTC")
-            ),
-        ];
-
-        // Add duration if present
-        if let Some(duration) = self.duration {
-            parts.push(format!("duration={}ms", duration.as_millis()));
+        let timestamp = self.timestamp.format("%H:%M:%S");
+        let sanitized_message = SecuritySanitizer::sanitize_message(&self.message);
+        
+        // Build metadata string if present
+        let mut metadata_parts = Vec::new();
+        
+        // Add key metadata fields in a clean format
+        if let Some(tool) = self.metadata.get("tool") {
+            metadata_parts.push(tool.to_uppercase());
         }
-
-        // Add sanitized metadata
+        
+        if let Some(result) = self.metadata.get("result") {
+            let status = if result == "success" { "Success" } else { "Failed" };
+            metadata_parts.push(status.to_string());
+        }
+        
+        // Add other important metadata
         for (key, value) in &self.metadata {
-            let safe_value = SecuritySanitizer::sanitize_metadata_value(key, value);
-            parts.push(format!("{}={}", key, safe_value));
+            if key != "tool" && key != "result" {
+                let safe_value = SecuritySanitizer::sanitize_metadata_value(key, value);
+                if key == "error" || key == "reason" {
+                    metadata_parts.push(format!("({})", safe_value));
+                } else if key == "tokens" || key == "cost" {
+                    metadata_parts.push(format!("{} {}", safe_value, key));
+                }
+            }
         }
-
-        parts.join(" | ")
+        
+        let metadata_str = if metadata_parts.is_empty() {
+            String::new()
+        } else {
+            format!("{}: ", metadata_parts.join(" "))
+        };
+        
+        // Add duration if present
+        let duration_str = if let Some(duration) = self.duration {
+            format!(" [{}ms]", duration.as_millis())
+        } else {
+            String::new()
+        };
+        
+        // Create operation prefix if not already in metadata
+        let operation_prefix = if metadata_str.is_empty() && !self.operation.is_empty() {
+            match self.operation.as_str() {
+                "list_directory" => "LIST_DIR: ",
+                "read_file" => "READ_FILE: ",
+                "write_file" => "WRITE_FILE: ",
+                "FILE_WATCH" => "FILE_WATCH: ",
+                "HTTP_POOL" => "HTTP_POOL: ",
+                "API_CALL" => "API_CALL: ",
+                "retry_operation" => "RETRY: ",
+                _ => &format!("{}: ", self.operation.to_uppercase()),
+            }
+        } else {
+            ""
+        };
+        
+        format!("{} [{}] {}{}{}{}", 
+            self.level.emoji(), 
+            timestamp,
+            operation_prefix,
+            metadata_str,
+            sanitized_message,
+            duration_str
+        )
     }
 }
 
@@ -278,10 +317,19 @@ impl Logger {
     ) {
         let tool_name_str = tool_name.into();
         let result = if success { "success" } else { "failure" };
+        
+        // Create a cleaner message based on the tool
+        let message = match tool_name_str.as_str() {
+            "list_directory" => "Listed directory contents",
+            "read_file" => "Read file contents",
+            "write_file" => "Wrote file contents",
+            _ => "Executed tool",
+        };
+        
         let entry = LogEntry::new(
             LogLevel::Info,
-            "tool_execution",
-            format!("Tool {} executed", tool_name_str),
+            tool_name_str.clone(),
+            message,
         )
         .with_metadata("tool", tool_name_str)
         .with_metadata("result", result)
@@ -301,14 +349,17 @@ impl Logger {
         cost: f64,
         duration: Duration,
     ) {
+        let model_str = model.into();
+        let message = format!("{} ({} tokens, ${:.4})", model_str, tokens, cost);
+        
         let entry = LogEntry::new(
             LogLevel::Info,
-            "claude_api_call",
-            "Claude API request completed",
+            "API_CALL",
+            message,
         )
-        .with_metadata("model", model.into())
+        .with_metadata("model", model_str)
         .with_metadata("tokens", tokens.to_string())
-        .with_metadata("cost_usd", format!("{:.6}", cost))
+        .with_metadata("cost", format!("${:.4}", cost))
         .with_duration(duration);
 
         if self.should_log(LogLevel::Info) {

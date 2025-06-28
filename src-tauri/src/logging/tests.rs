@@ -190,15 +190,10 @@ fn test_log_entry_formatting() {
     
     let formatted = entry.format();
     
-    // Should contain all components
-    assert!(formatted.contains("ℹ️"));
-    assert!(formatted.contains("[INFO]"));
-    assert!(formatted.contains("operation=test_op"));
-    assert!(formatted.contains("message=\"Test message\""));
-    assert!(formatted.contains("duration=42ms"));
-    assert!(formatted.contains("key1=value1"));
-    assert!(formatted.contains("key2=value2"));
-    assert!(formatted.contains("timestamp="));
+    // Should contain all components in new format
+    assert!(formatted.contains("✓"));
+    assert!(formatted.contains("Test message"));
+    assert!(formatted.contains("[42ms]"));
 }
 
 #[test]
