@@ -60,6 +60,15 @@ cargo build && cargo fmt && cargo clippy && cargo test
 4. **Tauri v2 Discipline**: Always use object parameters, verify signatures
 5. **Fast Feedback**: Build early and often to catch issues immediately
 
+## 🎯 Code Quality Standards
+
+- **YAGNI**: Build only what's needed now, avoid over-engineering
+- **DRY**: Centralized constants, no duplication across modules  
+- **KISS**: Simple solutions over complex abstractions
+- **Safety**: No `.unwrap()` in production, proper error handling
+
+> **Detailed Quality Guidelines**: See [PR Review & YAGNI Principles](.claude/learnings/pr-review-and-yagni-principles.md)
+
 ## ⚡ Quality Gates
 
 **Before Any Commit**:
