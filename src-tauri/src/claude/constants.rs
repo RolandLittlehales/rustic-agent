@@ -18,9 +18,8 @@ pub mod circuit_breaker {
 pub mod error_handling {
     use super::Duration;
 
-    /// Default maximum number of retry attempts for failed operations
-    /// Balances reliability (retry transient failures) with performance (avoid endless loops)
-    pub const DEFAULT_MAX_RETRIES: u32 = 3;
+    /// Re-export max retries from global config to avoid duplication
+    pub const DEFAULT_MAX_RETRIES: u32 = crate::config::constants::MAX_RETRY_ATTEMPTS;
 
     /// Default base delay for exponential backoff in milliseconds
     /// Starting point for retry delays: 500ms, 1s, 2s, 4s...
@@ -46,10 +45,8 @@ pub mod error_handling {
     /// After 60s, tries one request to see if service is healthy again
     pub const DEFAULT_CIRCUIT_TIMEOUT_SECS: u64 = 60;
 
-    /// Default HTTP timeout for Claude API requests in seconds
-    /// Long timeout for AI model inference which can be slow
-    /// Balances user experience with model processing time
-    pub const DEFAULT_HTTP_TIMEOUT_SECS: u64 = 120;
+    /// Re-export HTTP timeout from global config to avoid duplication
+    pub const DEFAULT_HTTP_TIMEOUT_SECS: u64 = crate::config::constants::HTTP_TIMEOUT_SECS;
 
     /// Jitter factor for adding randomness to retry delays (10%)
     /// Prevents thundering herd problems when multiple clients retry simultaneously

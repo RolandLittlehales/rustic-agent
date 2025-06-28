@@ -1,4 +1,5 @@
 use crate::claude::{
+    connection_pool::ConnectionPool,
     error::{ClaudeError, ClaudeResult, ErrorContext, ErrorHandler},
     message_processor::MessageProcessor,
     tools::{AgentTool, ToolExecutionContext, ToolExecutionEngine, ToolRegistry},
@@ -6,7 +7,6 @@ use crate::claude::{
     whitelist::WhitelistConfig,
     ClaudeConfig, Conversation,
 };
-use reqwest::Client;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -14,7 +14,7 @@ use tokio::sync::RwLock;
 #[derive(Debug)]
 pub struct ClaudeClient {
     config: ClaudeConfig,
-    http_client: Client,
+    connection_pool: ConnectionPool,
     tool_registry: ToolRegistry,
     tool_execution_engine: ToolExecutionEngine,
     message_processor: MessageProcessor,
@@ -28,11 +28,8 @@ impl ClaudeClient {
         // Validate configuration
         config.validate()?;
 
-        let http_client = Client::builder()
-            .timeout(Duration::from_secs(120))
-            .user_agent("LLMDevAgent/0.1.0")
-            .build()
-            .map_err(ClaudeError::HttpError)?;
+        // Create connection pool with optimized settings
+        let connection_pool = ConnectionPool::new();
 
         let mut tool_registry = ToolRegistry::new();
 
@@ -55,7 +52,7 @@ impl ClaudeClient {
 
         Ok(Self {
             config,
-            http_client,
+            connection_pool,
             tool_registry,
             tool_execution_engine,
             message_processor: MessageProcessor::new(),
@@ -116,13 +113,15 @@ impl ClaudeClient {
     }
 
     async fn make_api_call(&self, request: ClaudeRequest) -> ClaudeResult<ClaudeResponse> {
-        // Rate limiting: ensure at least 1 second between requests
+        // Rate limiting: ensure minimum interval between requests
         let sleep_duration = {
             let last_request = self.last_request.lock().unwrap();
             if let Some(last_time) = *last_request {
                 let elapsed = last_time.elapsed();
-                if elapsed < Duration::from_secs(1) {
-                    Some(Duration::from_secs(1) - elapsed)
+                let min_interval =
+                    Duration::from_millis(crate::config::constants::RATE_LIMIT_INTERVAL_MS);
+                if elapsed < min_interval {
+                    Some(min_interval - elapsed)
                 } else {
                     None
                 }
@@ -141,11 +140,19 @@ impl ClaudeClient {
             *last_request = Some(Instant::now());
         }
 
-        let response = self
-            .http_client
-            .post("https://api.anthropic.com/v1/messages")
+        let http_client = self
+            .connection_pool
+            .get_client()
+            .await
+            .map_err(ClaudeError::HttpError)?;
+
+        let response = http_client
+            .post(crate::config::constants::claude_messages_url())
             .header("x-api-key", &self.config.api_key)
-            .header("anthropic-version", "2023-06-01")
+            .header(
+                "anthropic-version",
+                crate::config::constants::CLAUDE_API_VERSION,
+            )
             .header("content-type", "application/json")
             .json(&request)
             .send()
@@ -207,8 +214,12 @@ impl ClaudeClient {
                     .unwrap_or_else(|| Arc::new(RwLock::new(WhitelistConfig::default())));
 
                 let context = ToolExecutionContext::new(name.clone(), input.clone(), whitelist)
-                    .with_timeout(Duration::from_secs(30))
-                    .with_max_retries(3);
+                    .with_timeout(Duration::from_secs(
+                        crate::claude::constants::error_handling::DEFAULT_HTTP_TIMEOUT_SECS,
+                    ))
+                    .with_max_retries(
+                        crate::claude::constants::error_handling::DEFAULT_MAX_RETRIES,
+                    );
 
                 // Execute tool using enhanced execution engine
                 let tool_request =

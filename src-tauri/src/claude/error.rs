@@ -42,33 +42,27 @@ impl ErrorContext {
             ClaudeError::JsonError(_) => "json_error",
         };
 
-        // Sanitize sensitive error message
-        let safe_error_message = Self::sanitize_error_message(&error.to_string());
+        // Use structured logging instead of direct println/eprintln
+        crate::log_error!(&self.operation, &error.to_string(), {
+            let mut context = std::collections::HashMap::new();
+            context.insert("error_type".to_string(), error_type.to_string());
+            context.insert("retry_count".to_string(), self.retry_count.to_string());
 
-        // Sanitize metadata to remove sensitive information
-        let safe_metadata = self.sanitize_metadata();
-
-        eprintln!(
-            "🚨 [ERROR] {} | type={} | operation={} | retry_count={} | timestamp={}{}{}{}",
-            safe_error_message,
-            error_type,
-            self.operation,
-            self.retry_count,
-            self.timestamp.format("%Y-%m-%d %H:%M:%S UTC"),
-            self.message_id
-                .as_ref()
-                .map(|id| format!(" | message_id={}", Self::sanitize_id(id)))
-                .unwrap_or_default(),
-            self.tool_use_id
-                .as_ref()
-                .map(|id| format!(" | tool_use_id={}", Self::sanitize_id(id)))
-                .unwrap_or_default(),
-            if !safe_metadata.is_empty() {
-                format!(" | metadata={:?}", safe_metadata)
-            } else {
-                String::new()
+            if let Some(message_id) = &self.message_id {
+                context.insert("message_id".to_string(), message_id.clone());
             }
-        );
+
+            if let Some(tool_use_id) = &self.tool_use_id {
+                context.insert("tool_use_id".to_string(), tool_use_id.clone());
+            }
+
+            // Add sanitized metadata
+            for (key, value) in self.sanitize_metadata() {
+                context.insert(key, value);
+            }
+
+            context
+        });
     }
 
     /// Sanitize error messages to prevent sensitive data exposure
@@ -152,41 +146,42 @@ impl ErrorContext {
 
     /// Log successful operation for telemetry
     pub fn log_success(&self, duration: Option<std::time::Duration>) {
-        println!(
-            "✅ [SUCCESS] operation={} | retry_count={} | timestamp={}{}{}{}",
-            self.operation,
-            self.retry_count,
-            self.timestamp.format("%Y-%m-%d %H:%M:%S UTC"),
-            duration
-                .map(|d| format!(" | duration={}ms", d.as_millis()))
-                .unwrap_or_default(),
-            self.message_id
-                .as_ref()
-                .map(|id| format!(" | message_id={}", id))
-                .unwrap_or_default(),
-            self.tool_use_id
-                .as_ref()
-                .map(|id| format!(" | tool_use_id={}", id))
-                .unwrap_or_default()
-        );
+        let mut context = std::collections::HashMap::new();
+        context.insert("retry_count".to_string(), self.retry_count.to_string());
+
+        if let Some(duration) = duration {
+            context.insert("duration_ms".to_string(), duration.as_millis().to_string());
+        }
+
+        if let Some(message_id) = &self.message_id {
+            context.insert("message_id".to_string(), message_id.clone());
+        }
+
+        if let Some(tool_use_id) = &self.tool_use_id {
+            context.insert("tool_use_id".to_string(), tool_use_id.clone());
+        }
+
+        crate::log_info!(&self.operation, "Operation completed successfully", context);
     }
 
     /// Log retry attempt for monitoring
     pub fn log_retry(&self, attempt: u32, delay: std::time::Duration) {
-        println!(
-            "🔄 [RETRY] operation={} | attempt={} | delay={}ms | timestamp={}{}{}",
-            self.operation,
-            attempt,
-            delay.as_millis(),
-            self.timestamp.format("%Y-%m-%d %H:%M:%S UTC"),
-            self.message_id
-                .as_ref()
-                .map(|id| format!(" | message_id={}", id))
-                .unwrap_or_default(),
-            self.tool_use_id
-                .as_ref()
-                .map(|id| format!(" | tool_use_id={}", id))
-                .unwrap_or_default()
+        let mut context = std::collections::HashMap::new();
+        context.insert("attempt".to_string(), attempt.to_string());
+        context.insert("delay_ms".to_string(), delay.as_millis().to_string());
+
+        if let Some(message_id) = &self.message_id {
+            context.insert("message_id".to_string(), message_id.clone());
+        }
+
+        if let Some(tool_use_id) = &self.tool_use_id {
+            context.insert("tool_use_id".to_string(), tool_use_id.clone());
+        }
+
+        crate::log_warn!(
+            &self.operation,
+            &format!("Retrying operation (attempt {})", attempt),
+            context
         );
     }
 

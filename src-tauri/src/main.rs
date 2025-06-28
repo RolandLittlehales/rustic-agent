@@ -8,6 +8,7 @@ use tauri::{async_runtime::Mutex, Manager};
 mod claude;
 mod config;
 mod file_watcher;
+mod logging;
 mod security;
 use claude::whitelist::{persistence, WhitelistConfig};
 use claude::{ClaudeClient, ClaudeConfig, Conversation, ConversationMessage};
